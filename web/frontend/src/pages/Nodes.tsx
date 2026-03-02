@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   Zap,
+  Terminal,
 } from 'lucide-react'
 import client from '../api/client'
 import { Button } from '@/components/ui/button'
@@ -307,6 +308,7 @@ function AgentTokenModal({
   const [generatedToken, setGeneratedToken] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [tokenConfirmAction, setTokenConfirmAction] = useState<'generate' | 'revoke' | null>(null)
+  const [installCommand, setInstallCommand] = useState<string | null>(null)
   const copyTimerRef = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => {
@@ -346,6 +348,21 @@ function AgentTokenModal({
       setGeneratedToken(null)
       queryClient.invalidateQueries({ queryKey: ['node-agent-token', node.uuid] })
       toast.success(t('nodes.toast.tokenRevoked'))
+    },
+    onError: (err: Error & { response?: { data?: { detail?: string } } }) => {
+      toast.error(t('nodes.toast.error'), { description: err.response?.data?.detail || err.message })
+    },
+  })
+
+  const installMutation = useMutation({
+    mutationFn: async () => {
+      const { data } = await client.post(`/nodes/${node.uuid}/agent-install`)
+      return data
+    },
+    onSuccess: (data) => {
+      setInstallCommand(data.install_command)
+      if (data.token) setGeneratedToken(data.token)
+      queryClient.invalidateQueries({ queryKey: ['node-agent-token', node.uuid] })
     },
     onError: (err: Error & { response?: { data?: { detail?: string } } }) => {
       toast.error(t('nodes.toast.error'), { description: err.response?.data?.detail || err.message })
@@ -465,8 +482,39 @@ function AgentTokenModal({
               </div>
             )}
 
+            {/* Install command */}
+            {installCommand && (
+              <div className="p-3 bg-dark-900/50 border border-green-500/20 rounded-lg space-y-2">
+                <p className="text-xs text-dark-300">{t('nodes.agentToken.installHint')}</p>
+                <div className="relative">
+                  <pre className="text-[11px] text-green-300 font-mono bg-dark-950/50 p-2.5 rounded overflow-x-auto whitespace-pre-wrap break-all">{installCommand}</pre>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-1.5 right-1.5 h-7 w-7 text-dark-300 hover:text-white"
+                    onClick={() => copyToClipboard(installCommand)}
+                    title={t('nodes.agentToken.copyCommand')}
+                  >
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                </div>
+                {copied && (
+                  <p className="text-xs text-green-400">{t('nodes.agentToken.copied')}</p>
+                )}
+              </div>
+            )}
+
             {/* Actions */}
-            <div className="flex items-center gap-2 pt-2">
+            <div className="flex items-center gap-2 flex-wrap pt-2">
+              <Button
+                variant="secondary"
+                onClick={() => installMutation.mutate()}
+                disabled={installMutation.isPending}
+              >
+                <Terminal className="w-4 h-4 mr-2" />
+                {installMutation.isPending ? '...' : t('nodes.agentToken.installAgent')}
+              </Button>
+
               <Button
                 onClick={() => {
                   if (tokenStatus?.has_token && !generatedToken) {

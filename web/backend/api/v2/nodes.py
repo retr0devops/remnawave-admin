@@ -477,6 +477,63 @@ async def revoke_agent_token(
         raise api_error(500, E.INTERNAL_ERROR)
 
 
+@router.post("/{node_uuid}/agent-install")
+async def get_agent_install_command(
+    node_uuid: str,
+    request: Request,
+    admin: AdminUser = Depends(require_permission("nodes", "edit")),
+):
+    """Generate install command for node agent. Auto-generates token if needed."""
+    try:
+        from shared.database import db_service
+        from shared.agent_tokens import set_node_agent_token
+
+        # Get existing token or generate new one
+        token = await db_service.get_node_agent_token(node_uuid)
+        if not token:
+            token = await set_node_agent_token(db_service, node_uuid)
+            if not token:
+                raise api_error(500, E.TOKEN_GENERATE_FAILED)
+            await write_audit_log(
+                admin_id=admin.account_id,
+                admin_username=admin.username,
+                action="node.generate_agent_token",
+                resource="nodes",
+                resource_id=node_uuid,
+                details=json.dumps({"node_uuid": node_uuid, "via": "agent-install"}),
+                ip_address=get_client_ip(request),
+            )
+
+        # Build install command
+        base_url = str(request.base_url).rstrip("/")
+        # Use Origin or X-Forwarded-Host for proper public URL
+        origin = request.headers.get("origin")
+        forwarded_host = request.headers.get("x-forwarded-host")
+        forwarded_proto = request.headers.get("x-forwarded-proto", "https")
+        if origin:
+            base_url = origin
+        elif forwarded_host:
+            base_url = f"{forwarded_proto}://{forwarded_host}"
+
+        script_url = "https://raw.githubusercontent.com/Case211/remnawave-admin/main/node-agent/install.sh"
+        install_cmd = (
+            f"curl -sSL {script_url} | "
+            f"bash -s -- --uuid {node_uuid} --url {base_url} --token {token}"
+        )
+
+        return {
+            "install_command": install_cmd,
+            "token": token,
+            "node_uuid": node_uuid,
+            "collector_url": base_url,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error generating install command for %s: %s", node_uuid, e)
+        raise api_error(500, E.INTERNAL_ERROR)
+
+
 @router.post("/{node_uuid}/disable", response_model=SuccessResponse)
 async def disable_node(
     node_uuid: str,

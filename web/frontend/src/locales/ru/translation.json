@@ -729,7 +729,10 @@
       "confirmGenerate": "Сгенерировать новый токен?",
       "confirmGenerateDesc": "Старый токен перестанет работать.",
       "confirmRevoke": "Отозвать токен?",
-      "confirmRevokeDesc": "Node Agent потеряет доступ."
+      "confirmRevokeDesc": "Node Agent потеряет доступ.",
+      "installAgent": "Установить агент",
+      "installHint": "Выполните на сервере ноды:",
+      "copyCommand": "Копировать команду"
     },
     "stats": {
       "total": "Всего",

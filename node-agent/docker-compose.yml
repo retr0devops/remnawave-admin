@@ -13,8 +13,6 @@ services:
       - /var/log/remnanode:/var/log/remnanode:ro
       - ./logs:/app/logs
       - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - remnawave-network
     deploy:
       resources:
         limits:
@@ -37,7 +35,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-networks:
-  remnawave-network:
-    external: true

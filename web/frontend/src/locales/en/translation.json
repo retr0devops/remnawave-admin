@@ -729,7 +729,10 @@
       "confirmGenerate": "Generate new token?",
       "confirmGenerateDesc": "The old token will stop working.",
       "confirmRevoke": "Revoke token?",
-      "confirmRevokeDesc": "Node Agent will lose access."
+      "confirmRevokeDesc": "Node Agent will lose access.",
+      "installAgent": "Install Agent",
+      "installHint": "Run on the node server:",
+      "copyCommand": "Copy command"
     },
     "stats": {
       "total": "Total",
