@@ -204,11 +204,7 @@ function formatTimestamp(ts: string): string {
   return ts
 }
 
-// Node chart colors — mono-teal palette (varying brightness for distinction)
-const NODE_COLORS = [
-  '#06b6d4', '#0891b2', '#22d3ee', '#0e7490', '#67e8f9',
-  '#155e75', '#0d9488', '#14b8a6', '#a5f3fc', '#164e63',
-]
+// NODE_COLORS removed — now using chart.nodeColors from useChartTheme (theme-aware)
 
 // ── StatCard ─────────────────────────────────────────────────────
 
@@ -250,12 +246,13 @@ const StatCard = memo(function StatCard({
   return (
     <Card
       className={cn(
-        "animate-fade-in-up group",
-        onClick && "cursor-pointer hover:shadow-glow-teal transition-shadow"
+        "animate-fade-in-up group relative overflow-hidden",
+        onClick && "cursor-pointer hover:shadow-[0_0_24px_-6px_rgba(var(--glow-rgb),0.25)] transition-all duration-300"
       )}
       onClick={onClick}
       style={{ animationDelay: `${index * 0.07}s` }}
     >
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[rgba(var(--glow-rgb),0.4)] to-transparent" />
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <div className="min-w-0 flex-1">
@@ -278,7 +275,7 @@ const StatCard = memo(function StatCard({
             )}
           </div>
           <div
-            className="p-3 rounded-lg transition-all duration-200 shrink-0"
+            className="p-3 rounded-lg transition-all duration-200 shrink-0 backdrop-blur-sm group-hover:shadow-[0_0_16px_-4px_rgba(var(--glow-rgb),0.3)]"
             style={{
               background: cfg.bg,
               border: `1px solid ${cfg.border}`,
@@ -339,7 +336,7 @@ function ChartSkeleton() {
       <div className="flex flex-col items-center gap-2">
         <div
           className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin"
-          style={{ borderColor: '#0d9488', borderTopColor: 'transparent' }}
+          style={{ borderColor: 'rgba(var(--glow-rgb), 0.8)', borderTopColor: 'transparent' }}
         />
         <span className="text-sm text-muted-foreground">{t('dashboard.loading')}</span>
       </div>
@@ -359,7 +356,7 @@ function PeriodSwitcher({
   options: { value: string; label: string }[]
 }) {
   return (
-    <div className="flex items-center gap-1 bg-[var(--glass-bg)] rounded-lg p-0.5">
+    <div className="flex items-center gap-1 bg-[var(--glass-bg)] border border-[var(--glass-border)] rounded-lg p-0.5">
       {options.map((opt) => (
         <button
           key={opt.value}
@@ -367,8 +364,8 @@ function PeriodSwitcher({
           className={cn(
             "px-2.5 py-1 text-xs rounded-md transition-all duration-200",
             value === opt.value
-              ? "bg-primary/20 text-primary-400 font-medium"
-              : "text-muted-foreground hover:text-white"
+              ? "bg-[var(--glass-bg-hover)] text-primary-400 font-medium border border-[var(--glass-border-hover)] shadow-[0_0_8px_-3px_rgba(var(--glow-rgb),0.2)]"
+              : "text-muted-foreground hover:text-white border border-transparent"
           )}
         >
           {opt.label}
@@ -459,7 +456,7 @@ function SystemStatusCard({
             ))}
           </div>
         ) : (
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             {components.map((comp) => {
               const IconComp = iconMap[comp.name] || Activity
               const statusColor = statusColorMap[comp.status] || '#6b7280'
@@ -484,7 +481,7 @@ function SystemStatusCard({
               }
 
               return (
-                <div key={comp.name} className="flex items-center justify-between">
+                <div key={comp.name} className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-2 border border-[var(--glass-border)] transition-colors hover:bg-[var(--glass-bg-hover)]">
                   <div className="flex items-center gap-2">
                     <IconComp className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm text-white">{comp.name}</span>
@@ -501,7 +498,7 @@ function SystemStatusCard({
                         className={cn("w-1.5 h-1.5 rounded-full", comp.status === 'online' && "animate-pulse")}
                         style={{
                           background: statusColor,
-                          boxShadow: `0 0 6px ${statusColor}80`,
+                          boxShadow: comp.status === 'online' ? `0 0 8px ${statusColor}` : `0 0 6px ${statusColor}80`,
                         }}
                       />
                       {statusLabel}
@@ -514,13 +511,13 @@ function SystemStatusCard({
         )}
 
         {uptime != null && (
-          <>
-            <Separator className="mt-3" />
-            <div className="flex items-center justify-between mt-3">
-              <span className="text-xs text-muted-foreground">{t('dashboard.uptime')}</span>
-              <span className="text-xs text-white font-mono">{formatUptime(uptime)}</span>
-            </div>
-          </>
+          <div className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-2 border border-[var(--glass-border)] mt-3">
+            <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <Activity className="w-3 h-3" />
+              {t('dashboard.uptime')}
+            </span>
+            <span className="text-xs text-primary-400 font-mono font-semibold">{formatUptime(uptime)}</span>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -584,22 +581,22 @@ function BillingSummaryCard({ loading }: { loading: boolean }) {
             </div>
             <Separator />
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-1.5 border border-[var(--glass-border)]">
                 <span className="text-xs text-muted-foreground">{t('dashboard.billingProviders')}</span>
                 <span className="text-xs text-white font-mono">{billing.total_providers}</span>
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-1.5 border border-[var(--glass-border)]">
                 <span className="text-xs text-muted-foreground">{t('dashboard.billingNodes')}</span>
                 <span className="text-xs text-white font-mono">{billing.total_billing_nodes}</span>
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-1.5 border border-[var(--glass-border)]">
                 <span className="text-xs text-muted-foreground">{t('dashboard.billingTotalSpent')}</span>
                 <span className="text-xs text-primary-400 font-semibold font-mono">
                   {formatCurrency(Number(billing.total_spent) || 0)}
                 </span>
               </div>
               {billing.next_payment_date && (
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-1.5 border border-[var(--glass-border)]">
                   <span className="text-xs text-muted-foreground flex items-center gap-1">
                     <CalendarClock className="w-3 h-3" />
                     {t('dashboard.billingNextPayment')}
@@ -1131,15 +1128,15 @@ export default function Dashboard() {
                 <>
                   <Separator className="mt-3" />
                   <div className="space-y-1.5 mt-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-1.5 border border-[var(--glass-border)]">
                       <span className="text-xs text-muted-foreground">{t('dashboard.today')}</span>
                       <span className="text-xs text-primary-400 font-semibold font-mono">{formatBytes(trafficStats.today_bytes)}</span>
                     </div>
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-1.5 border border-[var(--glass-border)]">
                       <span className="text-xs text-muted-foreground">{t('dashboard.thisWeek')}</span>
                       <span className="text-xs text-primary-400 font-semibold font-mono">{formatBytes(trafficStats.week_bytes)}</span>
                     </div>
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-1.5 border border-[var(--glass-border)]">
                       <span className="text-xs text-muted-foreground">{t('dashboard.thisMonth')}</span>
                       <span className="text-xs text-primary-400 font-semibold font-mono">{formatBytes(trafficStats.month_bytes)}</span>
                     </div>
@@ -1190,8 +1187,8 @@ export default function Dashboard() {
                       <defs>
                         {nodeUuids.map((uid, i) => (
                           <linearGradient key={uid} id={`grad-${i}`} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor={NODE_COLORS[i % NODE_COLORS.length]} stopOpacity={0.3} />
-                            <stop offset="95%" stopColor={NODE_COLORS[i % NODE_COLORS.length]} stopOpacity={0.05} />
+                            <stop offset="5%" stopColor={chart.nodeColors[i % chart.nodeColors.length]} stopOpacity={0.3} />
+                            <stop offset="95%" stopColor={chart.nodeColors[i % chart.nodeColors.length]} stopOpacity={0.05} />
                           </linearGradient>
                         ))}
                       </defs>
@@ -1210,7 +1207,7 @@ export default function Dashboard() {
                           dataKey={uid}
                           name={nodeNames[uid] || uid.substring(0, 8)}
                           stackId="traffic"
-                          stroke={NODE_COLORS[i % NODE_COLORS.length]}
+                          stroke={chart.nodeColors[i % chart.nodeColors.length]}
                           fill={`url(#grad-${i})`}
                           strokeWidth={2}
                         />
@@ -1220,8 +1217,8 @@ export default function Dashboard() {
                     <LineChart data={trafficChartData}>
                       <defs>
                         <linearGradient id="trafficGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.05} />
+                          <stop offset="5%" stopColor={chart.accentColor} stopOpacity={0.3} />
+                          <stop offset="95%" stopColor={chart.accentColor} stopOpacity={0.05} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
@@ -1236,10 +1233,10 @@ export default function Dashboard() {
                         type="monotone"
                         dataKey="value"
                         name={t('dashboard.traffic')}
-                        stroke="#06b6d4"
+                        stroke={chart.accentColor}
                         strokeWidth={2}
                         dot={false}
-                        activeDot={{ r: 4, fill: '#06b6d4' }}
+                        activeDot={{ r: 4, fill: chart.accentColor }}
                       />
                     </LineChart>
                   )}
@@ -1290,7 +1287,7 @@ export default function Dashboard() {
                     <RechartsTooltip contentStyle={chart.tooltipStyle} />
                     <Bar dataKey="value" name={t('dashboard.quantity', 'Количество')} radius={[0, 6, 6, 0]} maxBarSize={24}>
                       {connectionsBarData.map((_entry, i) => (
-                        <Cell key={i} fill={NODE_COLORS[i % NODE_COLORS.length]} />
+                        <Cell key={i} fill={chart.nodeColors[i % chart.nodeColors.length]} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -1381,7 +1378,7 @@ export default function Dashboard() {
                             className="h-full rounded-full transition-all duration-500"
                             style={{
                               width: `${violationStats && violationStats.total > 0 ? (item.value / violationStats.total) * 100 : 0}%`,
-                              background: 'linear-gradient(90deg, #0d9488, #06b6d4)',
+                              background: 'linear-gradient(90deg, var(--accent-from), var(--accent-to))',
                             }}
                           />
                         </div>
