@@ -11,8 +11,6 @@ import {
   Settings,
   TrendingUp,
   ArrowUpRight,
-  ArrowDownRight,
-  Minus,
   Activity,
   Wifi,
   Database,
@@ -97,14 +95,6 @@ interface TimeseriesResponse {
   node_names: Record<string, string>
 }
 
-interface DeltaStats {
-  users_delta: number | null
-  users_online_delta: number | null
-  traffic_delta: number | null
-  violations_delta: number | null
-  nodes_delta: number | null
-}
-
 interface SystemComponent {
   name: string
   status: string
@@ -141,14 +131,58 @@ const fetchTimeseries = async (period: string, metric: string): Promise<Timeseri
   return data
 }
 
-const fetchDeltas = async (): Promise<DeltaStats> => {
-  const { data } = await client.get('/analytics/deltas')
-  return data
-}
-
 const fetchSystemComponents = async (): Promise<SystemComponentsResponse> => {
   const { data } = await client.get('/analytics/system/components')
   return data
+}
+
+interface TopUserItem {
+  uuid: string
+  username: string
+  status: string
+  used_traffic_bytes: number
+  lifetime_used_traffic_bytes: number
+  traffic_limit_bytes: number | null
+  usage_percent: number | null
+  online_at: string | null
+}
+
+interface TrendPoint {
+  date: string
+  value: number
+}
+
+interface TrendsResponse {
+  series: TrendPoint[]
+  metric: string
+  period: string
+  total_growth: number
+}
+
+interface TopViolatorItem {
+  user_uuid: string
+  username: string | null
+  violations_count: number
+  max_score: number
+  avg_score: number
+  last_violation_at: string
+  actions: string[]
+  top_reasons: string[]
+}
+
+const fetchTopUsers = async (limit = 5): Promise<{ items: TopUserItem[] }> => {
+  const { data } = await client.get('/advanced-analytics/top-users', { params: { limit } })
+  return data
+}
+
+const fetchTrends = async (metric: string, period: string): Promise<TrendsResponse> => {
+  const { data } = await client.get('/advanced-analytics/trends', { params: { metric, period } })
+  return data
+}
+
+const fetchTopViolators = async (days = 7, limit = 5): Promise<TopViolatorItem[]> => {
+  const { data } = await client.get('/violations/top-violators', { params: { days, limit, min_score: 40 } })
+  return Array.isArray(data) ? data : []
 }
 
 // ── Utilities ────────────────────────────────────────────────────
@@ -217,14 +251,10 @@ interface StatCardProps {
   onClick?: () => void
   loading?: boolean
   index?: number
-  delta?: number | null
-  deltaType?: 'percent' | 'absolute'
-  tooltip?: string
 }
 
 const StatCard = memo(function StatCard({
   title, value, icon: Icon, color, subtitle, onClick, loading, index = 0,
-  delta, deltaType = 'percent', tooltip,
 }: StatCardProps) {
   const { t } = useTranslation()
   // Mono-accent: all stat card icons use the theme accent color via CSS variables
@@ -250,80 +280,39 @@ const StatCard = memo(function StatCard({
         onClick && "cursor-pointer hover:shadow-[0_0_24px_-6px_rgba(var(--glow-rgb),0.25)] transition-all duration-300"
       )}
       onClick={onClick}
-      style={{ animationDelay: `${index * 0.07}s` }}
+      style={{ animationDelay: `${index * 0.05}s` }}
     >
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[rgba(var(--glow-rgb),0.4)] to-transparent" />
-      <CardContent className="p-4">
+      <CardContent className="px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1">
-              <p className="text-sm text-muted-foreground">{title}</p>
-              {tooltip && <InfoTooltip text={tooltip} side="right" iconClassName="w-3.5 h-3.5" />}
-            </div>
+            <p className="text-xs text-muted-foreground">{title}</p>
             {loading ? (
-              <Skeleton className="h-8 w-20 mt-1" />
+              <Skeleton className="h-7 w-16 mt-1" />
             ) : (
-              <div className="flex items-center gap-2 mt-1">
-                <p className="text-xl md:text-2xl font-bold text-white">{value}</p>
-                {delta != null && delta !== 0 && (
-                  <DeltaIndicator value={delta} type={deltaType} />
-                )}
-              </div>
+              <p className="text-lg md:text-xl font-bold text-white mt-0.5">{value}</p>
             )}
             {subtitle && (
-              <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">{subtitle}</p>
             )}
           </div>
           <div
-            className="p-3 rounded-lg transition-all duration-200 shrink-0 backdrop-blur-sm group-hover:shadow-[0_0_16px_-4px_rgba(var(--glow-rgb),0.3)]"
+            className="p-2 rounded-lg shrink-0 backdrop-blur-sm"
             style={{
               background: cfg.bg,
               border: `1px solid ${cfg.border}`,
             }}
           >
-            <Icon className={cn("w-6 h-6", cfg.text)} />
+            <Icon className={cn("w-5 h-5", cfg.text)} />
           </div>
         </div>
         {onClick && (
-          <>
-            <Separator className="mt-3" />
-            <span className="text-xs text-muted-foreground group-hover:text-primary-400 flex items-center gap-1 transition-colors duration-200 mt-3">
-              {t('dashboard.details')} <ExternalLink className="w-3 h-3" />
-            </span>
-          </>
+          <span className="text-[11px] text-muted-foreground group-hover:text-primary-400 flex items-center gap-1 transition-colors duration-200 mt-2">
+            {t('dashboard.details')} <ExternalLink className="w-3 h-3" />
+          </span>
         )}
       </CardContent>
     </Card>
-  )
-})
-
-// ── DeltaIndicator ───────────────────────────────────────────────
-
-const DeltaIndicator = memo(function DeltaIndicator({ value, type = 'percent' }: { value: number; type?: 'percent' | 'absolute' }) {
-  const isPositive = value > 0
-  const isNeutral = value === 0
-
-  const text = type === 'percent'
-    ? `${isPositive ? '+' : ''}${value}%`
-    : `${isPositive ? '+' : ''}${value}`
-
-  if (isNeutral) {
-    return (
-      <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground">
-        <Minus className="w-3 h-3" />
-        {text}
-      </span>
-    )
-  }
-
-  return (
-    <span className={cn(
-      "inline-flex items-center gap-0.5 text-xs font-medium",
-      isPositive ? "text-green-400" : "text-red-400",
-    )}>
-      {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-      {text}
-    </span>
   )
 })
 
@@ -400,6 +389,219 @@ function TrafficChartTooltip({ active, payload, label }: { active?: boolean; pay
   )
 }
 
+// ── GrowthTrendsCard ─────────────────────────────────────────────
+
+function GrowthTrendsCard({
+  trends,
+  loading,
+  metric,
+  onMetricChange,
+}: {
+  trends: TrendsResponse | undefined
+  loading: boolean
+  metric: string
+  onMetricChange: (m: string) => void
+}) {
+  const { t } = useTranslation()
+  const chart = useChartTheme()
+  const formatBytesLocal = createFormatBytes(t)
+
+  const metricOptions = [
+    { value: 'users', label: t('dashboard.trendUsers') },
+    { value: 'traffic', label: t('dashboard.trendTraffic') },
+    { value: 'violations', label: t('dashboard.trendViolations') },
+  ]
+
+  const formatValue = (v: number) => {
+    if (metric === 'traffic') return formatBytesLocal(v)
+    return v.toLocaleString()
+  }
+
+  return (
+    <Card className="animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+      <CardHeader className="pb-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base md:text-lg">{t('dashboard.growthTrends')}</CardTitle>
+            <InfoTooltip text={t('dashboard.growthTrendsTooltip')} side="right" />
+          </div>
+          <PeriodSwitcher value={metric} onChange={onMetricChange} options={metricOptions} />
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <ChartSkeleton />
+        ) : trends && trends.series.length > 0 ? (
+          <>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs text-muted-foreground">{t('dashboard.totalGrowth')}:</span>
+              <span className="text-sm font-semibold text-primary-400">{formatValue(trends.total_growth)}</span>
+            </div>
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={trends.series}>
+                <defs>
+                  <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={chart.accentColor} stopOpacity={0.3} />
+                    <stop offset="95%" stopColor={chart.accentColor} stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+                <XAxis dataKey="date" stroke={chart.axis} fontSize={10} tickFormatter={(d) => { const p = d.split('-'); return `${p[2]}.${p[1]}` }} />
+                <YAxis stroke={chart.axis} fontSize={10} tickFormatter={(v) => metric === 'traffic' ? createFormatBytesShort(t)(v) : v} />
+                <RechartsTooltip contentStyle={chart.tooltipStyle} />
+                <Area type="monotone" dataKey="value" name={metricOptions.find((o) => o.value === metric)?.label || metric} stroke={chart.accentColor} fill="url(#trendGrad)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </>
+        ) : (
+          <div className="h-[180px] flex items-center justify-center">
+            <span className="text-muted-foreground text-sm">{t('dashboard.noData')}</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── TopUsersCard ─────────────────────────────────────────────────
+
+function TopUsersCard({
+  topUsers,
+  loading,
+}: {
+  topUsers: { items: TopUserItem[] } | undefined
+  loading: boolean
+}) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const formatBytesLocal = createFormatBytes(t)
+  const items = topUsers?.items || []
+
+  return (
+    <Card className="animate-fade-in-up cursor-pointer hover:shadow-[0_0_24px_-6px_rgba(var(--glow-rgb),0.2)] transition-all" style={{ animationDelay: '0.15s' }} onClick={() => navigate('/users')}>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base md:text-lg">{t('dashboard.topUsersByTraffic')}</CardTitle>
+            <InfoTooltip text={t('dashboard.topUsersByTrafficTooltip')} side="right" />
+          </div>
+          <span className="text-xs text-muted-foreground">{t('dashboard.top5')}</span>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-8 w-full" />)}
+          </div>
+        ) : items.length > 0 ? (
+          <div className="space-y-2">
+            {items.map((user, i) => (
+              <div key={user.uuid} className="flex items-center gap-3 bg-[var(--glass-bg)] rounded-lg px-3 py-2 border border-[var(--glass-border)]">
+                <span className="text-xs text-muted-foreground w-4 text-center font-mono">{i + 1}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm text-white truncate">{user.username}</span>
+                    <span className="text-xs text-primary-400 font-mono font-semibold shrink-0 ml-2">{formatBytesLocal(user.used_traffic_bytes)}</span>
+                  </div>
+                  {user.traffic_limit_bytes && user.usage_percent != null ? (
+                    <div className="w-full h-1.5 bg-[var(--glass-bg-hover)] rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.min(user.usage_percent, 100)}%`,
+                          background: user.usage_percent >= 90 ? 'linear-gradient(90deg, #ef4444, #f87171)' : user.usage_percent >= 70 ? 'linear-gradient(90deg, #f59e0b, #fbbf24)' : 'linear-gradient(90deg, var(--accent-from), var(--accent-to))',
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-full h-1.5 bg-[var(--glass-bg-hover)] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full w-full" style={{ background: 'linear-gradient(90deg, var(--accent-from), var(--accent-to))', opacity: 0.3 }} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="h-32 flex items-center justify-center">
+            <span className="text-muted-foreground text-sm">{t('dashboard.noData')}</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── TopViolatorsCard ────────────────────────────────────────────
+
+function TopViolatorsCard({
+  topViolators,
+  loading,
+}: {
+  topViolators: TopViolatorItem[] | undefined
+  loading: boolean
+}) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const items = topViolators || []
+
+  const scoreColor = (score: number) => {
+    if (score >= 80) return 'text-red-400'
+    if (score >= 60) return 'text-orange-400'
+    if (score >= 40) return 'text-yellow-400'
+    return 'text-green-400'
+  }
+
+  return (
+    <Card className="animate-fade-in-up cursor-pointer hover:shadow-[0_0_24px_-6px_rgba(var(--glow-rgb),0.2)] transition-all" style={{ animationDelay: '0.2s' }} onClick={() => navigate('/violations')}>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base md:text-lg">{t('dashboard.topViolators')}</CardTitle>
+            <InfoTooltip text={t('dashboard.topViolatorsTooltip')} side="right" />
+          </div>
+          <span className="text-xs text-muted-foreground">{t('dashboard.last7days')}</span>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-8 w-full" />)}
+          </div>
+        ) : items.length > 0 ? (
+          <div className="space-y-2">
+            {items.map((v, i) => (
+              <div key={v.user_uuid} className="flex items-center gap-3 bg-[var(--glass-bg)] rounded-lg px-3 py-2 border border-[var(--glass-border)]">
+                <span className="text-xs text-muted-foreground w-4 text-center font-mono">{i + 1}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-white truncate">{v.username || v.user_uuid.substring(0, 8)}</span>
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{v.violations_count}</Badge>
+                      <span className={cn("text-xs font-mono font-semibold", scoreColor(v.max_score))}>{v.max_score.toFixed(0)}</span>
+                    </div>
+                  </div>
+                  {v.top_reasons.length > 0 && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {v.top_reasons.slice(0, 2).map((r) => (
+                        <span key={r} className="text-[9px] text-muted-foreground bg-[var(--glass-bg-hover)] rounded px-1 py-0.5">{r}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="h-32 flex items-center justify-center">
+            <span className="text-muted-foreground text-sm">{t('dashboard.noViolators')}</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ── SystemStatusCard ─────────────────────────────────────────────
 
 function SystemStatusCard({
@@ -431,43 +633,37 @@ function SystemStatusCard({
   }
 
   return (
-    <Card className="animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+    <Card className="animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <CardTitle className="text-base md:text-lg">{t('dashboard.systemStatus')}</CardTitle>
-            <InfoTooltip
-              text={t('dashboard.systemStatusTooltip')}
-              side="right"
-            />
+            <CardTitle className="text-sm md:text-base">{t('dashboard.systemStatus')}</CardTitle>
           </div>
-          {version && (
-            <Badge variant="secondary" className="text-[10px] font-mono">
-              v{version}
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            {uptime != null && (
+              <span className="text-[10px] text-muted-foreground font-mono">{formatUptime(uptime)}</span>
+            )}
+            {version && (
+              <Badge variant="secondary" className="text-[10px] font-mono">
+                v{version}
+              </Badge>
+            )}
+          </div>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="pt-0">
         {loading ? (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {[1, 2, 3, 4].map((i) => (
-              <Skeleton key={i} className="h-8 w-full" />
+              <Skeleton key={i} className="h-7 w-full" />
             ))}
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {components.map((comp) => {
               const IconComp = iconMap[comp.name] || Activity
               const statusColor = statusColorMap[comp.status] || '#6b7280'
-              const statusLabel = {
-                online: t('dashboard.statusOnline'),
-                offline: t('dashboard.statusOffline'),
-                degraded: t('dashboard.statusDegraded'),
-                unknown: t('dashboard.statusUnknown'),
-              }[comp.status] || comp.status
 
-              // Build detail string
               let detail = ''
               const d = comp.details || {}
               if (comp.name === 'Remnawave API' && d.response_time_ms) {
@@ -481,42 +677,26 @@ function SystemStatusCard({
               }
 
               return (
-                <div key={comp.name} className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-2 border border-[var(--glass-border)] transition-colors hover:bg-[var(--glass-bg-hover)]">
+                <div key={comp.name} className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-2.5 py-1.5 border border-[var(--glass-border)]">
                   <div className="flex items-center gap-2">
-                    <IconComp className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm text-white">{comp.name}</span>
+                    <IconComp className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-xs text-white">{comp.name}</span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     {detail && (
                       <span className="text-[10px] text-muted-foreground font-mono">{detail}</span>
                     )}
-                    <Badge
-                      variant={comp.status === 'online' ? 'success' : comp.status === 'degraded' ? 'warning' : 'destructive'}
-                      className="gap-1.5 px-2 text-[10px]"
-                    >
-                      <span
-                        className={cn("w-1.5 h-1.5 rounded-full", comp.status === 'online' && "animate-pulse")}
-                        style={{
-                          background: statusColor,
-                          boxShadow: comp.status === 'online' ? `0 0 8px ${statusColor}` : `0 0 6px ${statusColor}80`,
-                        }}
-                      />
-                      {statusLabel}
-                    </Badge>
+                    <span
+                      className={cn("w-1.5 h-1.5 rounded-full", comp.status === 'online' && "animate-pulse")}
+                      style={{
+                        background: statusColor,
+                        boxShadow: comp.status === 'online' ? `0 0 8px ${statusColor}` : `0 0 6px ${statusColor}80`,
+                      }}
+                    />
                   </div>
                 </div>
               )
             })}
-          </div>
-        )}
-
-        {uptime != null && (
-          <div className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-2 border border-[var(--glass-border)] mt-3">
-            <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-              <Activity className="w-3 h-3" />
-              {t('dashboard.uptime')}
-            </span>
-            <span className="text-xs text-primary-400 font-mono font-semibold">{formatUptime(uptime)}</span>
           </div>
         )}
       </CardContent>
@@ -864,6 +1044,7 @@ export default function Dashboard() {
   const canViewBilling = hasPermission('billing', 'view')
   // Chart state
   const [trafficPeriod, setTrafficPeriod] = useState('7d')
+  const [trendMetric, setTrendMetric] = useState('users')
   const chart = useChartTheme()
 
   const trafficPeriodOptions = [
@@ -914,20 +1095,36 @@ export default function Dashboard() {
     enabled: canViewAnalytics,
   })
 
-  const { data: deltas, isLoading: deltasLoading } = useQuery({
-    queryKey: ['deltas'],
-    queryFn: fetchDeltas,
-    refetchInterval: 120000,
-    staleTime: 60_000,
-    enabled: canViewAnalytics,
-  })
-
   const { data: systemComponents, isLoading: componentsLoading } = useQuery({
     queryKey: ['systemComponents'],
     queryFn: fetchSystemComponents,
     refetchInterval: 60000,
     staleTime: 30_000,
     enabled: canViewAnalytics,
+  })
+
+  const { data: topUsers, isLoading: topUsersLoading } = useQuery({
+    queryKey: ['topUsers'],
+    queryFn: () => fetchTopUsers(5),
+    staleTime: 60_000,
+    refetchInterval: 120000,
+    enabled: canViewAnalytics,
+  })
+
+  const { data: trends, isLoading: trendsLoading } = useQuery({
+    queryKey: ['trends', trendMetric],
+    queryFn: () => fetchTrends(trendMetric, '30d'),
+    staleTime: 60_000,
+    refetchInterval: 120000,
+    enabled: canViewAnalytics,
+  })
+
+  const { data: topViolators, isLoading: topViolatorsLoading } = useQuery({
+    queryKey: ['topViolators'],
+    queryFn: () => fetchTopViolators(7, 5),
+    staleTime: 30_000,
+    refetchInterval: 60000,
+    enabled: canViewViolations,
   })
 
   // ── Refresh ──────────────────────────────────────────────────
@@ -937,9 +1134,11 @@ export default function Dashboard() {
     queryClient.invalidateQueries({ queryKey: ['violationStats'] })
     queryClient.invalidateQueries({ queryKey: ['trafficStats'] })
     queryClient.invalidateQueries({ queryKey: ['timeseries'] })
-    queryClient.invalidateQueries({ queryKey: ['deltas'] })
     queryClient.invalidateQueries({ queryKey: ['systemComponents'] })
     queryClient.invalidateQueries({ queryKey: ['billingSummary'] })
+    queryClient.invalidateQueries({ queryKey: ['topUsers'] })
+    queryClient.invalidateQueries({ queryKey: ['trends'] })
+    queryClient.invalidateQueries({ queryKey: ['topViolators'] })
   }
 
   // ── Chart data ───────────────────────────────────────────────
@@ -986,22 +1185,7 @@ export default function Dashboard() {
         { name: t('dashboard.severityCritical'), value: 0, key: 'critical' },
       ]
 
-  const actionLabels: Record<string, string> = {
-    'no_action': t('dashboard.actionNoAction'),
-    'monitor': t('dashboard.actionMonitor'),
-    'warn': t('dashboard.actionWarn'),
-    'soft_block': t('dashboard.actionSoftBlock'),
-    'temp_block': t('dashboard.actionTempBlock'),
-    'hard_block': t('dashboard.actionHardBlock'),
-  }
-  const actionChartData = violationStats?.by_action
-    ? Object.entries(violationStats.by_action).map(([name, value]) => ({
-        name: actionLabels[name] || name,
-        value,
-      }))
-    : []
-
-  const isLoading = overviewLoading || violationsLoading || trafficLoading || timeseriesLoading || connectionsLoading || deltasLoading || componentsLoading
+  const isLoading = overviewLoading || violationsLoading || trafficLoading || timeseriesLoading || connectionsLoading || componentsLoading
 
   return (
     <div className="space-y-6">
@@ -1038,8 +1222,8 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* ── Stats grid with deltas ──────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* ── Stats grid (5 compact cards) ────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         {canViewUsers && (
           <StatCard
             title={t('dashboard.totalUsers')}
@@ -1050,9 +1234,17 @@ export default function Dashboard() {
             onClick={() => navigate('/users')}
             loading={overviewLoading && canViewAnalytics}
             index={0}
-            delta={deltas?.users_delta}
-            deltaType="percent"
-            tooltip={t('dashboard.totalUsersTooltip')}
+          />
+        )}
+        {canViewAnalytics && (
+          <StatCard
+            title={t('dashboard.currentOnline')}
+            value={overview?.users_online != null ? overview.users_online.toLocaleString() : '-'}
+            icon={Wifi}
+            color="green"
+            subtitle={overview ? t('dashboard.onlineSubtitle', { nodes: overview.online_nodes }) : undefined}
+            loading={overviewLoading}
+            index={1}
           />
         )}
         {canViewNodes && (
@@ -1064,10 +1256,7 @@ export default function Dashboard() {
             subtitle={overview ? t('dashboard.nodesSubtitle', { offline: overview.offline_nodes, disabled: overview.disabled_nodes, online: overview.users_online || 0 }) : undefined}
             onClick={() => navigate('/nodes')}
             loading={overviewLoading && canViewAnalytics}
-            index={1}
-            delta={deltas?.nodes_delta}
-            deltaType="absolute"
-            tooltip={t('dashboard.activeNodesTooltip')}
+            index={2}
           />
         )}
         {canViewViolations && (
@@ -1079,102 +1268,33 @@ export default function Dashboard() {
             subtitle={overview ? t('dashboard.violationsSubtitle', { today: overview.violations_today, week: overview.violations_week }) : undefined}
             onClick={() => navigate('/violations')}
             loading={overviewLoading && canViewAnalytics}
-            index={2}
-            delta={deltas?.violations_delta}
-            deltaType="absolute"
-            tooltip={t('dashboard.violationsTooltip')}
+            index={3}
           />
         )}
         {canViewAnalytics && (
-          <Card
-            className="animate-fade-in-up"
-            style={{ animationDelay: '0.21s' }}
-          >
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-1">
-                    <p className="text-sm text-muted-foreground">{t('dashboard.traffic')}</p>
-                    <InfoTooltip
-                      text={t('dashboard.trafficTooltip')}
-                      side="right"
-                      iconClassName="w-3.5 h-3.5"
-                    />
-                  </div>
-                  {(overviewLoading && trafficLoading) ? (
-                    <Skeleton className="h-8 w-20 mt-1" />
-                  ) : (
-                    <div className="flex items-center gap-2 mt-1">
-                      <p className="text-xl md:text-2xl font-bold text-white">
-                        {overview ? formatBytes(overview.total_traffic_bytes) : trafficStats ? formatBytes(trafficStats.total_bytes) : '-'}
-                      </p>
-                      {deltas?.traffic_delta != null && deltas.traffic_delta !== 0 && (
-                        <DeltaIndicator value={deltas.traffic_delta} type="percent" />
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div
-                  className="p-3 rounded-lg"
-                  style={{
-                    background: 'rgba(var(--glow-rgb), 0.15)',
-                    border: '1px solid rgba(var(--glow-rgb), 0.3)',
-                  }}
-                >
-                  <TrendingUp className="w-6 h-6 text-primary-400" />
-                </div>
-              </div>
-              {trafficStats && (
-                <>
-                  <Separator className="mt-3" />
-                  <div className="space-y-1.5 mt-3">
-                    <div className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-1.5 border border-[var(--glass-border)]">
-                      <span className="text-xs text-muted-foreground">{t('dashboard.today')}</span>
-                      <span className="text-xs text-primary-400 font-semibold font-mono">{formatBytes(trafficStats.today_bytes)}</span>
-                    </div>
-                    <div className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-1.5 border border-[var(--glass-border)]">
-                      <span className="text-xs text-muted-foreground">{t('dashboard.thisWeek')}</span>
-                      <span className="text-xs text-primary-400 font-semibold font-mono">{formatBytes(trafficStats.week_bytes)}</span>
-                    </div>
-                    <div className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-1.5 border border-[var(--glass-border)]">
-                      <span className="text-xs text-muted-foreground">{t('dashboard.thisMonth')}</span>
-                      <span className="text-xs text-primary-400 font-semibold font-mono">{formatBytes(trafficStats.month_bytes)}</span>
-                    </div>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
+          <StatCard
+            title={t('dashboard.traffic')}
+            value={overview ? formatBytes(overview.total_traffic_bytes) : trafficStats ? formatBytes(trafficStats.total_bytes) : '-'}
+            icon={TrendingUp}
+            color="cyan"
+            subtitle={trafficStats ? t('dashboard.trafficSubtitle', { today: formatBytes(trafficStats.today_bytes) }) : undefined}
+            loading={overviewLoading && trafficLoading}
+            index={4}
+          />
         )}
       </div>
 
-      {/* ── System Status + Traffic Chart (side by side) ────────── */}
+      {/* ── Row 2: Traffic Chart + Growth Trends ────────────────── */}
       {canViewAnalytics && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* System Status (left) */}
-          <SystemStatusCard
-            components={systemComponents?.components || []}
-            uptime={systemComponents?.uptime_seconds ?? null}
-            version={systemComponents?.version || ''}
-            loading={componentsLoading}
-          />
-
-        {/* Traffic Chart (right) */}
           <Card className="animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
             <CardHeader className="pb-2">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <CardTitle className="text-base md:text-lg">{t('dashboard.traffic')}</CardTitle>
-                  <InfoTooltip
-                    text={t('dashboard.trafficChartTooltip')}
-                    side="right"
-                  />
+                  <InfoTooltip text={t('dashboard.trafficChartTooltip')} side="right" />
                 </div>
-                <PeriodSwitcher
-                  value={trafficPeriod}
-                  onChange={setTrafficPeriod}
-                  options={trafficPeriodOptions}
-                />
+                <PeriodSwitcher value={trafficPeriod} onChange={setTrafficPeriod} options={trafficPeriodOptions} />
               </div>
             </CardHeader>
             <CardContent>
@@ -1194,23 +1314,10 @@ export default function Dashboard() {
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                       <XAxis dataKey="name" stroke={chart.axis} fontSize={11} />
-                      <YAxis
-                        stroke={chart.axis}
-                        fontSize={11}
-                        tickFormatter={(v) => formatBytesShort(v)}
-                      />
+                      <YAxis stroke={chart.axis} fontSize={11} tickFormatter={(v) => formatBytesShort(v)} />
                       <RechartsTooltip content={<TrafficChartTooltip />} />
                       {nodeUuids.map((uid, i) => (
-                        <Area
-                          key={uid}
-                          type="monotone"
-                          dataKey={uid}
-                          name={nodeNames[uid] || uid.substring(0, 8)}
-                          stackId="traffic"
-                          stroke={chart.nodeColors[i % chart.nodeColors.length]}
-                          fill={`url(#grad-${i})`}
-                          strokeWidth={2}
-                        />
+                        <Area key={uid} type="monotone" dataKey={uid} name={nodeNames[uid] || uid.substring(0, 8)} stackId="traffic" stroke={chart.nodeColors[i % chart.nodeColors.length]} fill={`url(#grad-${i})`} strokeWidth={2} />
                       ))}
                     </AreaChart>
                   ) : (
@@ -1223,21 +1330,9 @@ export default function Dashboard() {
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                       <XAxis dataKey="name" stroke={chart.axis} fontSize={11} />
-                      <YAxis
-                        stroke={chart.axis}
-                        fontSize={11}
-                        tickFormatter={(v) => formatBytesShort(v)}
-                      />
+                      <YAxis stroke={chart.axis} fontSize={11} tickFormatter={(v) => formatBytesShort(v)} />
                       <RechartsTooltip content={<TrafficChartTooltip />} />
-                      <Line
-                        type="monotone"
-                        dataKey="value"
-                        name={t('dashboard.traffic')}
-                        stroke={chart.accentColor}
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={{ r: 4, fill: chart.accentColor }}
-                      />
+                      <Line type="monotone" dataKey="value" name={t('dashboard.traffic')} stroke={chart.accentColor} strokeWidth={2} dot={false} activeDot={{ r: 4, fill: chart.accentColor }} />
                     </LineChart>
                   )}
                 </ResponsiveContainer>
@@ -1248,22 +1343,20 @@ export default function Dashboard() {
               )}
             </CardContent>
           </Card>
+
+          <GrowthTrendsCard trends={trends} loading={trendsLoading} metric={trendMetric} onMetricChange={setTrendMetric} />
       </div>
       )}
 
-      {/* ── Connections Chart + Violations ───────────────────────── */}
+      {/* ── Row 3: Connections by Node + Top Users by Traffic ─────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Connections by node — horizontal bar chart */}
         {canViewAnalytics && (
           <Card className="animate-fade-in-up" style={{ animationDelay: '0.15s' }}>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <CardTitle className="text-base md:text-lg">{t('dashboard.connectionsByNode')}</CardTitle>
-                  <InfoTooltip
-                    text={t('dashboard.connectionsByNodeTooltip')}
-                    side="right"
-                  />
+                  <InfoTooltip text={t('dashboard.connectionsByNodeTooltip')} side="right" />
                 </div>
                 <span className="text-xs text-muted-foreground">
                   {t('dashboard.total')}: {overview?.users_online || 0}
@@ -1276,14 +1369,7 @@ export default function Dashboard() {
                   <BarChart data={connectionsBarData} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                     <XAxis type="number" stroke={chart.axis} fontSize={11} />
-                    <YAxis
-                      dataKey="name"
-                      type="category"
-                      stroke={chart.axis}
-                      fontSize={11}
-                      width={120}
-                      tick={{ fill: chart.tick }}
-                    />
+                    <YAxis dataKey="name" type="category" stroke={chart.axis} fontSize={11} width={120} tick={{ fill: chart.tick }} />
                     <RechartsTooltip contentStyle={chart.tooltipStyle} />
                     <Bar dataKey="value" name={t('dashboard.quantity', 'Количество')} radius={[0, 6, 6, 0]} maxBarSize={24}>
                       {connectionsBarData.map((_entry, i) => (
@@ -1308,116 +1394,79 @@ export default function Dashboard() {
           </Card>
         )}
 
-        {/* Violations by severity */}
+        {canViewAnalytics && (
+          <TopUsersCard topUsers={topUsers} loading={topUsersLoading} />
+        )}
+      </div>
+
+      {/* ── Row 4: Violations compact + Top Violators ──────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {canViewViolations && (
           <Card className="animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
             <CardHeader className="pb-2">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <CardTitle className="text-base md:text-lg">{t('dashboard.violationsBySeverity')}</CardTitle>
-                  <InfoTooltip
-                    text={t('dashboard.violationsBySeverityTooltip')}
-                    side="right"
-                  />
+                  <InfoTooltip text={t('dashboard.violationsBySeverityTooltip')} side="right" />
                 </div>
                 {violationStats && (
                   <span className="text-xs text-muted-foreground">
-                    {t('dashboard.total')}: {violationStats.total} | {t('dashboard.unique')}: {violationStats.unique_users}
+                    {t('dashboard.total')}: {violationStats.total}
                   </span>
                 )}
               </div>
             </CardHeader>
             <CardContent>
               {violationsLoading ? (
-                <ChartSkeleton />
-              ) : (
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={violationsChartData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
-                    <XAxis type="number" stroke={chart.axis} fontSize={12} />
-                    <YAxis dataKey="name" type="category" stroke={chart.axis} fontSize={12} width={100} />
-                    <RechartsTooltip contentStyle={chart.tooltipStyle} />
-                    <Bar dataKey="value" name={t('dashboard.quantity', 'Количество')} radius={[0, 8, 8, 0]}>
-                      {violationsChartData.map((entry) => (
-                        <Cell key={entry.key} fill={SEVERITY_COLORS[entry.key] || '#fab005'} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      {/* ── Bottom row: Violations by action + Billing/Updates ──── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Violations by action */}
-        {canViewViolations && (
-          <Card className="animate-fade-in-up" style={{ animationDelay: '0.25s' }}>
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <CardTitle className="text-base md:text-lg">{t('dashboard.byRecommendation')}</CardTitle>
-                <InfoTooltip
-                  text={t('dashboard.byRecommendationTooltip')}
-                  side="right"
-                />
-              </div>
-            </CardHeader>
-            <CardContent>
-              {violationsLoading ? (
-                <ChartSkeleton />
-              ) : actionChartData.length > 0 ? (
                 <div className="space-y-3">
-                  {actionChartData.map((item, i) => (
-                    <div key={item.name} className="flex items-center justify-between animate-fade-in" style={{ animationDelay: `${i * 0.05}s` }}>
-                      <span className="text-sm text-dark-100">{item.name}</span>
-                      <div className="flex items-center gap-2">
-                        <div className="w-24 h-2 bg-[var(--glass-bg-hover)] rounded-full overflow-hidden">
+                  {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-6 w-full" />)}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {violationsChartData.map((entry) => {
+                    const maxVal = Math.max(...violationsChartData.map((e) => e.value), 1)
+                    return (
+                      <div key={entry.key} className="flex items-center gap-3">
+                        <span className="text-xs text-muted-foreground w-20 shrink-0">{entry.name}</span>
+                        <div className="flex-1 h-2 bg-[var(--glass-bg-hover)] rounded-full overflow-hidden">
                           <div
                             className="h-full rounded-full transition-all duration-500"
                             style={{
-                              width: `${violationStats && violationStats.total > 0 ? (item.value / violationStats.total) * 100 : 0}%`,
-                              background: 'linear-gradient(90deg, var(--accent-from), var(--accent-to))',
+                              width: `${(entry.value / maxVal) * 100}%`,
+                              background: SEVERITY_COLORS[entry.key] || '#fab005',
                             }}
                           />
                         </div>
-                        <span className="text-sm text-white font-mono w-8 text-right">{item.value}</span>
+                        <span className="text-xs text-white font-mono w-8 text-right">{entry.value}</span>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
-              ) : (
-                <div className="h-48 flex items-center justify-center">
-                  <span className="text-muted-foreground text-sm">{t('dashboard.noData')}</span>
-                </div>
-              )}
-              {violationStats && violationStats.max_score > 0 && (
-                <>
-                  <Separator className="mt-4" />
-                  <div className="space-y-1 mt-4">
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>{t('dashboard.avgScore')}</span>
-                      <span className="text-white">{violationStats.avg_score.toFixed(1)}</span>
-                    </div>
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>{t('dashboard.maxScore')}</span>
-                      <span className="text-white">{violationStats.max_score.toFixed(1)}</span>
-                    </div>
-                  </div>
-                </>
               )}
             </CardContent>
           </Card>
         )}
 
-        {/* Right column: Billing/Updates or QuickActions */}
-        {canViewAnalytics || canViewBilling ? (
+        {canViewViolations && (
+          <TopViolatorsCard topViolators={topViolators} loading={topViolatorsLoading} />
+        )}
+      </div>
+
+      {/* ── Row 5: Billing + System Status + Updates ──────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {canViewBilling && <BillingSummaryCard loading={false} />}
+
+        {canViewAnalytics ? (
           <div className="space-y-6">
-            {canViewBilling && <BillingSummaryCard loading={false} />}
-            {canViewAnalytics && <UpdateCheckerCard />}
+            <SystemStatusCard
+              components={systemComponents?.components || []}
+              uptime={systemComponents?.uptime_seconds ?? null}
+              version={systemComponents?.version || ''}
+              loading={componentsLoading}
+            />
+            <UpdateCheckerCard />
           </div>
-        ) : (
+        ) : !canViewBilling ? (
           <Card className="animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
             <CardHeader className="pb-2">
               <CardTitle className="text-base md:text-lg">{t('dashboard.quickActions')}</CardTitle>
@@ -1445,7 +1494,7 @@ export default function Dashboard() {
               </div>
             </CardContent>
           </Card>
-        )}
+        ) : null}
       </div>
     </div>
   )
