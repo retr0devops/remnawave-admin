@@ -326,7 +326,22 @@
     "noViolators": "Нарушителей нет",
     "currentOnline": "Текущий онлайн",
     "onlineSubtitle": "На {{nodes}} нодах",
-    "trafficSubtitle": "Сегодня: {{today}}"
+    "trafficSubtitle": "Сегодня: {{today}}",
+    "trafficDay": "День",
+    "trafficWeek": "Неделя",
+    "trafficMonth": "Месяц",
+    "activityFeed": "Лента событий",
+    "activityFeedTooltip": "Последние действия админов",
+    "live": "Live",
+    "nodeLoad": "Нагрузка нод",
+    "nodeLoadTooltip": "Топ-5 нагруженных нод (среднее CPU + RAM)",
+    "expiryTimeline": "Истечение подписок",
+    "expiryTimelineTooltip": "Пользователи с подписками, истекающими в ближайшее время",
+    "expiringIn7d": "За 7 дней",
+    "expiringIn30d": "За 30 дней",
+    "trafficAnomalies": "Аномалии трафика",
+    "trafficAnomaliesTooltip": "Ноды с отклонением трафика >50% от среднего за 7 дней",
+    "noAnomalies": "Всё в норме"
   },
   "users": {
     "title": "Пользователи",

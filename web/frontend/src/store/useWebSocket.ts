@@ -159,6 +159,7 @@ export function useRealtimeUpdates() {
             // Refresh audit log queries
             queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
             queryClient.invalidateQueries({ queryKey: ['audit-stats'] })
+            queryClient.invalidateQueries({ queryKey: ['dashboard-audit-feed'] })
 
             // Show toast for actions by OTHER admins
             const currentUser = useAuthStore.getState().user

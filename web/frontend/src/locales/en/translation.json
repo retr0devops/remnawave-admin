@@ -326,7 +326,22 @@
     "noViolators": "No violators",
     "currentOnline": "Current Online",
     "onlineSubtitle": "On {{nodes}} nodes",
-    "trafficSubtitle": "Today: {{today}}"
+    "trafficSubtitle": "Today: {{today}}",
+    "trafficDay": "Day",
+    "trafficWeek": "Week",
+    "trafficMonth": "Month",
+    "activityFeed": "Activity Feed",
+    "activityFeedTooltip": "Recent admin actions",
+    "live": "Live",
+    "nodeLoad": "Node Load",
+    "nodeLoadTooltip": "Top 5 loaded nodes by average CPU and memory",
+    "expiryTimeline": "Subscription Expiry",
+    "expiryTimelineTooltip": "Users with subscriptions expiring soon",
+    "expiringIn7d": "In 7 days",
+    "expiringIn30d": "In 30 days",
+    "trafficAnomalies": "Traffic Anomalies",
+    "trafficAnomaliesTooltip": "Nodes with traffic deviating >50% from 7-day average",
+    "noAnomalies": "All normal"
   },
   "users": {
     "title": "Users",

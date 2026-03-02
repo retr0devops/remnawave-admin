@@ -1,4 +1,4 @@
-import { useState, memo, Fragment } from 'react'
+import { useState, useMemo, memo, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -11,6 +11,7 @@ import {
   Settings,
   TrendingUp,
   ArrowUpRight,
+  ArrowDownRight,
   Activity,
   Wifi,
   Database,
@@ -37,6 +38,7 @@ import {
 } from 'recharts'
 import client from '../api/client'
 import { billingApi } from '../api/billing'
+import { auditApi, type AuditLogEntry } from '../api/audit'
 import { usePermissionStore } from '../store/permissionStore'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -171,18 +173,57 @@ interface TopViolatorItem {
 }
 
 const fetchTopUsers = async (limit = 5): Promise<{ items: TopUserItem[] }> => {
-  const { data } = await client.get('/advanced-analytics/top-users', { params: { limit } })
+  const { data } = await client.get('/analytics/advanced/top-users', { params: { limit } })
   return data
 }
 
 const fetchTrends = async (metric: string, period: string): Promise<TrendsResponse> => {
-  const { data } = await client.get('/advanced-analytics/trends', { params: { metric, period } })
+  const { data } = await client.get('/analytics/advanced/trends', { params: { metric, period } })
   return data
 }
 
 const fetchTopViolators = async (days = 7, limit = 5): Promise<TopViolatorItem[]> => {
   const { data } = await client.get('/violations/top-violators', { params: { days, limit, min_score: 40 } })
   return Array.isArray(data) ? data : []
+}
+
+interface NodeFleetItem {
+  uuid: string
+  name: string
+  is_connected: boolean
+  is_disabled: boolean
+  cpu_usage: number | null
+  memory_usage: number | null
+  users_online: number
+  traffic_today_bytes: number
+}
+
+interface NodeFleetResponse {
+  nodes: NodeFleetItem[]
+  total: number
+  online: number
+}
+
+interface TrafficAnomaly {
+  nodeName: string
+  nodeUuid: string
+  todayBytes: number
+  avgBytes: number
+  deviationPercent: number
+  direction: 'up' | 'down'
+}
+
+const fetchNodeFleet = async (): Promise<NodeFleetResponse> => {
+  const { data } = await client.get('/analytics/node-fleet')
+  return data
+}
+
+const fetchExpiringCounts = async (): Promise<{ in7d: number; in30d: number }> => {
+  const [r7, r30] = await Promise.all([
+    client.get('/users', { params: { expire_filter: 'expiring_7d', per_page: 1 } }),
+    client.get('/users', { params: { expire_filter: 'expiring_30d', per_page: 1 } }),
+  ])
+  return { in7d: r7.data?.total ?? 0, in30d: r30.data?.total ?? 0 }
 }
 
 // ── Utilities ────────────────────────────────────────────────────
@@ -1026,6 +1067,271 @@ function UpdateCheckerCard() {
 }
 
 
+// ── ActivityFeedCard ─────────────────────────────────────────────
+
+const ActivityFeedCard = memo(function ActivityFeedCard({
+  items, loading,
+}: {
+  items: AuditLogEntry[]
+  loading: boolean
+}) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const { formatTimeAgo } = useFormatters()
+
+  const actionIcon = (action: string) => {
+    if (action.includes('create')) return '+'
+    if (action.includes('delete')) return '×'
+    if (action.includes('update') || action.includes('edit')) return '✎'
+    if (action.includes('login')) return '→'
+    return '•'
+  }
+
+  return (
+    <Card
+      className="animate-fade-in-up cursor-pointer hover:shadow-[0_0_24px_-6px_rgba(var(--glow-rgb),0.2)] transition-all"
+      style={{ animationDelay: '0.25s' }}
+      onClick={() => navigate('/audit')}
+    >
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm md:text-base">{t('dashboard.activityFeed')}</CardTitle>
+            <InfoTooltip text={t('dashboard.activityFeedTooltip')} side="right" />
+          </div>
+          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{t('dashboard.live')}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {loading ? (
+          <div className="space-y-2">
+            {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-5 w-full" />)}
+          </div>
+        ) : items.length > 0 ? (
+          <div className="space-y-0.5 max-h-[200px] overflow-auto">
+            {items.map((entry) => (
+              <div key={entry.id} className="flex items-center gap-2 py-1 text-xs">
+                <span className="text-muted-foreground shrink-0 w-14 text-[10px] font-mono">
+                  {entry.created_at ? formatTimeAgo(entry.created_at) : ''}
+                </span>
+                <span className="text-primary-400 w-3 text-center shrink-0 font-mono">
+                  {actionIcon(entry.action)}
+                </span>
+                <span className="text-muted-foreground truncate">
+                  <span className="text-white">{entry.admin_username}</span>{' '}
+                  {entry.action}{entry.resource ? ` ${entry.resource}` : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="h-20 flex items-center justify-center">
+            <span className="text-muted-foreground text-sm">{t('dashboard.noActivity')}</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+})
+
+// ── NodeLoadCard ────────────────────────────────────────────────
+
+const NodeLoadCard = memo(function NodeLoadCard({
+  nodes, loading,
+}: {
+  nodes: NodeFleetItem[]
+  loading: boolean
+}) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+
+  const sortedNodes = useMemo(() => {
+    if (!nodes?.length) return []
+    return nodes
+      .filter((n) => n.is_connected && !n.is_disabled)
+      .map((n) => ({
+        ...n,
+        load: ((n.cpu_usage ?? 0) + (n.memory_usage ?? 0)) / 2,
+      }))
+      .sort((a, b) => b.load - a.load)
+      .slice(0, 5)
+  }, [nodes])
+
+  const loadColor = (load: number) => {
+    if (load >= 90) return '#ef4444'
+    if (load >= 70) return '#f59e0b'
+    return 'var(--accent-from)'
+  }
+
+  return (
+    <Card
+      className="animate-fade-in-up cursor-pointer hover:shadow-[0_0_24px_-6px_rgba(var(--glow-rgb),0.2)] transition-all"
+      style={{ animationDelay: '0.2s' }}
+      onClick={() => navigate('/fleet')}
+    >
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm md:text-base">{t('dashboard.nodeLoad')}</CardTitle>
+            <InfoTooltip text={t('dashboard.nodeLoadTooltip')} side="right" />
+          </div>
+          <span className="text-xs text-muted-foreground">{t('dashboard.top5')}</span>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {loading ? (
+          <div className="space-y-2">
+            {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-5 w-full" />)}
+          </div>
+        ) : sortedNodes.length > 0 ? (
+          <div className="space-y-1.5">
+            {sortedNodes.map((node) => (
+              <div key={node.uuid} className="flex items-center gap-2">
+                <span className="text-xs text-white truncate w-24 shrink-0">{node.name}</span>
+                <div className="flex-1 h-1.5 bg-[var(--glass-bg-hover)] rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(node.load, 100)}%`, background: loadColor(node.load) }}
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground font-mono w-10 text-right">
+                  {node.load.toFixed(0)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="h-20 flex items-center justify-center">
+            <span className="text-muted-foreground text-sm">{t('dashboard.noData')}</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+})
+
+// ── ExpiryCountsCard ────────────────────────────────────────────
+
+const ExpiryCountsCard = memo(function ExpiryCountsCard({
+  counts, loading,
+}: {
+  counts: { in7d: number; in30d: number } | undefined
+  loading: boolean
+}) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+
+  return (
+    <Card
+      className="animate-fade-in-up cursor-pointer hover:shadow-[0_0_24px_-6px_rgba(var(--glow-rgb),0.2)] transition-all"
+      style={{ animationDelay: '0.25s' }}
+      onClick={() => navigate('/users')}
+    >
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm md:text-base">{t('dashboard.expiryTimeline')}</CardTitle>
+            <InfoTooltip text={t('dashboard.expiryTimelineTooltip')} side="right" />
+          </div>
+          <CalendarClock className="w-4 h-4 text-muted-foreground" />
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {loading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </div>
+        ) : counts ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-2 border border-[var(--glass-border)]">
+              <span className="text-xs text-muted-foreground">{t('dashboard.expiringIn7d')}</span>
+              <Badge
+                variant="secondary"
+                className={cn(
+                  'font-mono text-xs',
+                  counts.in7d > 10 && 'bg-red-500/20 text-red-400 border-red-500/30',
+                  counts.in7d > 0 && counts.in7d <= 10 && 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+                )}
+              >
+                {counts.in7d}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between bg-[var(--glass-bg)] rounded-lg px-3 py-2 border border-[var(--glass-border)]">
+              <span className="text-xs text-muted-foreground">{t('dashboard.expiringIn30d')}</span>
+              <Badge variant="secondary" className="font-mono text-xs">{counts.in30d}</Badge>
+            </div>
+          </div>
+        ) : (
+          <div className="h-16 flex items-center justify-center">
+            <span className="text-muted-foreground text-sm">{t('dashboard.noData')}</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+})
+
+// ── TrafficAnomalyCard ──────────────────────────────────────────
+
+const TrafficAnomalyCard = memo(function TrafficAnomalyCard({
+  anomalies, loading,
+}: {
+  anomalies: TrafficAnomaly[]
+  loading: boolean
+}) {
+  const { t } = useTranslation()
+  const formatBytesLocal = createFormatBytes(t)
+
+  return (
+    <Card className="animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm md:text-base">{t('dashboard.trafficAnomalies')}</CardTitle>
+            <InfoTooltip text={t('dashboard.trafficAnomaliesTooltip')} side="right" />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {loading ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-5 w-full" />)}
+          </div>
+        ) : anomalies.length > 0 ? (
+          <div className="space-y-1.5">
+            {anomalies.map((a) => (
+              <div key={a.nodeUuid} className="flex items-center gap-2 text-xs">
+                <span className="text-white truncate w-24 shrink-0">{a.nodeName}</span>
+                {a.direction === 'up' ? (
+                  <ArrowUpRight className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                ) : (
+                  <ArrowDownRight className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                )}
+                <span className={cn(
+                  'font-mono font-semibold shrink-0',
+                  a.direction === 'up' ? 'text-red-400' : 'text-blue-400',
+                )}>
+                  {a.direction === 'up' ? '+' : ''}{a.deviationPercent}%
+                </span>
+                <span className="text-muted-foreground truncate">
+                  {formatBytesLocal(a.todayBytes)} vs {formatBytesLocal(a.avgBytes)}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="h-16 flex items-center justify-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            <span className="text-muted-foreground text-sm">{t('dashboard.noAnomalies')}</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+})
+
+
 // ── Main Dashboard Component ─────────────────────────────────────
 
 export default function Dashboard() {
@@ -1042,6 +1348,8 @@ export default function Dashboard() {
   const canViewViolations = hasPermission('violations', 'view')
   const canViewAnalytics = hasPermission('analytics', 'view')
   const canViewBilling = hasPermission('billing', 'view')
+  const canViewAudit = hasPermission('audit', 'view')
+  const canViewFleet = hasPermission('fleet', 'view')
   // Chart state
   const [trafficPeriod, setTrafficPeriod] = useState('7d')
   const [trendMetric, setTrendMetric] = useState('users')
@@ -1127,6 +1435,30 @@ export default function Dashboard() {
     enabled: canViewViolations,
   })
 
+  const { data: auditFeed, isLoading: auditLoading } = useQuery({
+    queryKey: ['dashboard-audit-feed'],
+    queryFn: () => auditApi.list({ limit: 10 }),
+    refetchInterval: 15000,
+    staleTime: 10_000,
+    enabled: canViewAudit,
+  })
+
+  const { data: nodeFleet, isLoading: nodeFleetLoading } = useQuery({
+    queryKey: ['dashboard-node-fleet'],
+    queryFn: fetchNodeFleet,
+    refetchInterval: 30000,
+    staleTime: 15_000,
+    enabled: canViewFleet,
+  })
+
+  const { data: expiringCounts, isLoading: expiringLoading } = useQuery({
+    queryKey: ['dashboard-expiring'],
+    queryFn: fetchExpiringCounts,
+    refetchInterval: 300000,
+    staleTime: 120_000,
+    enabled: canViewUsers,
+  })
+
   // ── Refresh ──────────────────────────────────────────────────
 
   const handleRefreshAll = () => {
@@ -1139,6 +1471,9 @@ export default function Dashboard() {
     queryClient.invalidateQueries({ queryKey: ['topUsers'] })
     queryClient.invalidateQueries({ queryKey: ['trends'] })
     queryClient.invalidateQueries({ queryKey: ['topViolators'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard-audit-feed'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard-node-fleet'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard-expiring'] })
   }
 
   // ── Chart data ───────────────────────────────────────────────
@@ -1184,6 +1519,34 @@ export default function Dashboard() {
         { name: t('dashboard.severityHigh'), value: 0, key: 'high' },
         { name: t('dashboard.severityCritical'), value: 0, key: 'critical' },
       ]
+
+  // ── Traffic anomaly computation ──────────────────────────────
+  const trafficAnomalies = useMemo<TrafficAnomaly[]>(() => {
+    if (!nodeFleet?.nodes?.length || !timeseries?.node_points?.length) return []
+    const nNames = timeseries.node_names || {}
+    const nodeAvgs: Record<string, number> = {}
+    for (const uid of Object.keys(nNames)) {
+      const vals = timeseries.node_points.map(p => p.nodes[uid] ?? 0).filter(v => v > 0)
+      if (vals.length > 0) nodeAvgs[uid] = vals.reduce((a, b) => a + b, 0) / vals.length
+    }
+    const anomalies: TrafficAnomaly[] = []
+    for (const node of nodeFleet.nodes) {
+      if (!node.is_connected || node.is_disabled) continue
+      const avg = nodeAvgs[node.uuid]
+      if (avg == null || avg < 1024 * 1024) continue
+      const today = node.traffic_today_bytes
+      const deviation = avg > 0 ? ((today - avg) / avg) * 100 : 0
+      if (Math.abs(deviation) > 50) {
+        anomalies.push({
+          nodeName: node.name, nodeUuid: node.uuid,
+          todayBytes: today, avgBytes: avg,
+          deviationPercent: Math.round(deviation),
+          direction: deviation > 0 ? 'up' : 'down',
+        })
+      }
+    }
+    return anomalies.sort((a, b) => Math.abs(b.deviationPercent) - Math.abs(a.deviationPercent)).slice(0, 5)
+  }, [nodeFleet, timeseries])
 
   const isLoading = overviewLoading || violationsLoading || trafficLoading || timeseriesLoading || connectionsLoading || componentsLoading
 
@@ -1277,7 +1640,7 @@ export default function Dashboard() {
             value={overview ? formatBytes(overview.total_traffic_bytes) : trafficStats ? formatBytes(trafficStats.total_bytes) : '-'}
             icon={TrendingUp}
             color="cyan"
-            subtitle={trafficStats ? t('dashboard.trafficSubtitle', { today: formatBytes(trafficStats.today_bytes) }) : undefined}
+            subtitle={trafficStats ? `${t('dashboard.trafficDay')}: ${formatBytes(trafficStats.today_bytes)} | ${t('dashboard.trafficWeek')}: ${formatBytes(trafficStats.week_bytes)} | ${t('dashboard.trafficMonth')}: ${formatBytes(trafficStats.month_bytes)}` : undefined}
             loading={overviewLoading && trafficLoading}
             index={4}
           />
@@ -1399,14 +1762,31 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* ── Row 4: Violations compact + Top Violators ──────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* ── Row 4: Node Load + Expiry + Traffic Anomaly ───────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {canViewFleet && (
+          <NodeLoadCard nodes={nodeFleet?.nodes || []} loading={nodeFleetLoading} />
+        )}
+        {canViewUsers && (
+          <ExpiryCountsCard counts={expiringCounts} loading={expiringLoading} />
+        )}
+        {(canViewFleet && canViewAnalytics) && (
+          <TrafficAnomalyCard anomalies={trafficAnomalies} loading={nodeFleetLoading || timeseriesLoading} />
+        )}
+      </div>
+
+      {/* ── Row 5: Activity Feed + Violations + Top Violators ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {canViewAudit && (
+          <ActivityFeedCard items={auditFeed?.items || []} loading={auditLoading} />
+        )}
+
         {canViewViolations && (
           <Card className="animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <CardTitle className="text-base md:text-lg">{t('dashboard.violationsBySeverity')}</CardTitle>
+                  <CardTitle className="text-sm md:text-base">{t('dashboard.violationsBySeverity')}</CardTitle>
                   <InfoTooltip text={t('dashboard.violationsBySeverityTooltip')} side="right" />
                 </div>
                 {violationStats && (
@@ -1452,24 +1832,25 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* ── Row 5: Billing + System Status + Updates ──────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* ── Row 6: Billing + System Status + Updates ──────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {canViewBilling && <BillingSummaryCard loading={false} />}
 
+        {canViewAnalytics && (
+          <SystemStatusCard
+            components={systemComponents?.components || []}
+            uptime={systemComponents?.uptime_seconds ?? null}
+            version={systemComponents?.version || ''}
+            loading={componentsLoading}
+          />
+        )}
+
         {canViewAnalytics ? (
-          <div className="space-y-6">
-            <SystemStatusCard
-              components={systemComponents?.components || []}
-              uptime={systemComponents?.uptime_seconds ?? null}
-              version={systemComponents?.version || ''}
-              loading={componentsLoading}
-            />
-            <UpdateCheckerCard />
-          </div>
+          <UpdateCheckerCard />
         ) : !canViewBilling ? (
           <Card className="animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base md:text-lg">{t('dashboard.quickActions')}</CardTitle>
+              <CardTitle className="text-sm md:text-base">{t('dashboard.quickActions')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-3">
