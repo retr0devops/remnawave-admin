@@ -204,4 +204,34 @@ export const advancedAnalyticsApi = {
     const { data } = await client.get('/analytics/advanced/retention', { params: { weeks } })
     return data
   },
+
+  nodeMetricsHistory: async (period = '24h', nodeUuid?: string): Promise<NodeMetricsHistoryResponse> => {
+    const params: Record<string, string> = { period }
+    if (nodeUuid) params.node_uuid = nodeUuid
+    const { data } = await client.get('/analytics/advanced/node-metrics-history', { params })
+    return data
+  },
+}
+
+export interface NodeMetricsHistoryItem {
+  node_uuid: string
+  node_name: string
+  avg_cpu: number | null
+  avg_memory: number | null
+  avg_disk: number | null
+  max_cpu: number | null
+  max_memory: number | null
+  max_disk: number | null
+  samples_count: number
+}
+
+export interface NodeMetricsTimeseriesPoint {
+  timestamp: string
+  nodes: Record<string, { cpu: number | null; memory: number | null; disk: number | null }>
+}
+
+export interface NodeMetricsHistoryResponse {
+  nodes: NodeMetricsHistoryItem[]
+  timeseries: NodeMetricsTimeseriesPoint[]
+  node_names: Record<string, string>
 }

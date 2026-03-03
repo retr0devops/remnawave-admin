@@ -78,6 +78,26 @@ CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name);
 CREATE INDEX IF NOT EXISTS idx_nodes_is_connected ON nodes(is_connected);
 CREATE INDEX IF NOT EXISTS idx_nodes_agent_token ON nodes(agent_token) WHERE agent_token IS NOT NULL;
 
+-- Снимки метрик нод (для истории)
+CREATE TABLE IF NOT EXISTS node_metrics_snapshots (
+    id BIGSERIAL PRIMARY KEY,
+    node_uuid UUID NOT NULL REFERENCES nodes(uuid) ON DELETE CASCADE,
+    cpu_usage FLOAT,
+    cpu_cores INTEGER,
+    memory_usage FLOAT,
+    memory_total_bytes BIGINT,
+    memory_used_bytes BIGINT,
+    disk_usage FLOAT,
+    disk_total_bytes BIGINT,
+    disk_used_bytes BIGINT,
+    disk_read_speed_bps BIGINT DEFAULT 0,
+    disk_write_speed_bps BIGINT DEFAULT 0,
+    uptime_seconds INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_nms_node_created ON node_metrics_snapshots(node_uuid, created_at);
+
 -- Хосты
 CREATE TABLE IF NOT EXISTS hosts (
     uuid UUID PRIMARY KEY,
@@ -856,8 +876,159 @@ class DatabaseService:
             )
             return result == "UPDATE 1"
 
+    # ==================== Node Metrics Snapshots ====================
+
+    async def insert_node_metrics_snapshot(
+        self,
+        node_uuid: str,
+        cpu_usage: float | None = None,
+        cpu_cores: int | None = None,
+        memory_usage: float | None = None,
+        memory_total_bytes: int | None = None,
+        memory_used_bytes: int | None = None,
+        disk_usage: float | None = None,
+        disk_total_bytes: int | None = None,
+        disk_used_bytes: int | None = None,
+        disk_read_speed_bps: int | None = None,
+        disk_write_speed_bps: int | None = None,
+        uptime_seconds: int | None = None,
+    ) -> bool:
+        """Insert a snapshot of node metrics for historical tracking."""
+        if not self.is_connected:
+            return False
+        try:
+            async with self.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO node_metrics_snapshots
+                    (node_uuid, cpu_usage, cpu_cores, memory_usage,
+                     memory_total_bytes, memory_used_bytes,
+                     disk_usage, disk_total_bytes, disk_used_bytes,
+                     disk_read_speed_bps, disk_write_speed_bps, uptime_seconds)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    """,
+                    node_uuid, cpu_usage, cpu_cores, memory_usage,
+                    memory_total_bytes, memory_used_bytes,
+                    disk_usage, disk_total_bytes, disk_used_bytes,
+                    disk_read_speed_bps, disk_write_speed_bps, uptime_seconds,
+                )
+                return True
+        except Exception as e:
+            logger.debug("Failed to insert metrics snapshot: %s", e)
+            return False
+
+    async def get_node_metrics_history(
+        self,
+        period: str = "24h",
+        node_uuid: str | None = None,
+    ) -> list:
+        """Get averaged node metrics for the given period."""
+        if not self.is_connected:
+            return []
+
+        delta_map = {"24h": 1, "7d": 7, "30d": 30}
+        days = delta_map.get(period, 1)
+
+        query = """
+            SELECT
+                s.node_uuid,
+                n.name as node_name,
+                ROUND(AVG(s.cpu_usage)::numeric, 1) as avg_cpu,
+                ROUND(AVG(s.memory_usage)::numeric, 1) as avg_memory,
+                ROUND(AVG(s.disk_usage)::numeric, 1) as avg_disk,
+                ROUND(MAX(s.cpu_usage)::numeric, 1) as max_cpu,
+                ROUND(MAX(s.memory_usage)::numeric, 1) as max_memory,
+                ROUND(MAX(s.disk_usage)::numeric, 1) as max_disk,
+                COUNT(*) as samples_count
+            FROM node_metrics_snapshots s
+            JOIN nodes n ON n.uuid = s.node_uuid
+            WHERE s.created_at >= NOW() - make_interval(days => $1)
+        """
+        params: list = [days]
+
+        if node_uuid:
+            query += " AND s.node_uuid = $2::uuid"
+            params.append(node_uuid)
+
+        query += " GROUP BY s.node_uuid, n.name ORDER BY n.name"
+
+        try:
+            async with self.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error("get_node_metrics_history failed: %s", e)
+            return []
+
+    async def get_node_metrics_timeseries(
+        self,
+        period: str = "24h",
+        node_uuid: str | None = None,
+    ) -> list:
+        """Get time-bucketed average metrics for charting.
+
+        24h -> hourly, 7d -> 6h, 30d -> daily.
+        """
+        if not self.is_connected:
+            return []
+
+        delta_map = {"24h": 1, "7d": 7, "30d": 30}
+        trunc_map = {"24h": "hour", "7d": "hour", "30d": "day"}
+        # For 7d we truncate to hour then floor to 6h in Python for simplicity
+        days = delta_map.get(period, 1)
+        trunc = trunc_map.get(period, "hour")
+
+        query = f"""
+            SELECT
+                date_trunc('{trunc}', s.created_at) as bucket,
+                s.node_uuid,
+                n.name as node_name,
+                ROUND(AVG(s.cpu_usage)::numeric, 1) as avg_cpu,
+                ROUND(AVG(s.memory_usage)::numeric, 1) as avg_memory,
+                ROUND(AVG(s.disk_usage)::numeric, 1) as avg_disk
+            FROM node_metrics_snapshots s
+            JOIN nodes n ON n.uuid = s.node_uuid
+            WHERE s.created_at >= NOW() - make_interval(days => $1)
+        """
+        params: list = [days]
+        if node_uuid:
+            query += " AND s.node_uuid = $2::uuid"
+            params.append(node_uuid)
+        query += f" GROUP BY bucket, s.node_uuid, n.name ORDER BY bucket"
+
+        try:
+            async with self.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+                result = [dict(r) for r in rows]
+                # For 7d period, floor hourly buckets to 6h
+                if period == "7d":
+                    for row in result:
+                        b = row["bucket"]
+                        if b:
+                            row["bucket"] = b.replace(hour=(b.hour // 6) * 6, minute=0, second=0, microsecond=0)
+                return result
+        except Exception as e:
+            logger.error("get_node_metrics_timeseries failed: %s", e)
+            return []
+
+    async def cleanup_old_metrics_snapshots(self, retention_days: int = 30) -> int:
+        """Delete metrics snapshots older than retention_days."""
+        if not self.is_connected:
+            return 0
+        try:
+            async with self.acquire() as conn:
+                result = await conn.execute(
+                    "DELETE FROM node_metrics_snapshots WHERE created_at < NOW() - make_interval(days => $1)",
+                    retention_days,
+                )
+                count = int(result.split()[-1]) if result else 0
+                return count
+        except Exception as e:
+            logger.error("cleanup_old_metrics_snapshots failed: %s", e)
+            return 0
+
     # ==================== Hosts ====================
-    
+
     async def get_all_hosts(self) -> List[Dict[str, Any]]:
         """Get all hosts with raw_data in API format."""
         if not self.is_connected:
@@ -1415,6 +1586,25 @@ class DatabaseService:
                 connection_ids
             )
             return int(result.split()[-1]) if result else 0
+
+    async def cleanup_old_connections(self, retention_days: int = 30) -> int:
+        """Delete closed user_connections older than retention_days."""
+        if not self.is_connected:
+            return 0
+        try:
+            async with self.acquire() as conn:
+                result = await conn.execute(
+                    """
+                    DELETE FROM user_connections
+                    WHERE disconnected_at IS NOT NULL
+                      AND connected_at < NOW() - make_interval(days => $1)
+                    """,
+                    retention_days,
+                )
+                return int(result.split()[-1]) if result else 0
+        except Exception as e:
+            logger.error("cleanup_old_connections failed: %s", e)
+            return 0
 
     # ==================== User Node Traffic Methods ====================
 

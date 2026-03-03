@@ -36,6 +36,12 @@ MAX_COOLDOWN_SIZE = 10000
 # Periodic cleanup of old violations
 _last_violation_cleanup: datetime = datetime.min
 
+# Periodic cleanup of old metrics snapshots and connections
+_last_metrics_cleanup: datetime = datetime.min
+CLEANUP_INTERVAL_HOURS = 24
+METRICS_RETENTION_DAYS = 30
+CONNECTIONS_RETENTION_DAYS = 30
+
 # Semaphore: limit concurrent background violation detection batches
 _violation_semaphore = asyncio.Semaphore(3)
 
@@ -183,8 +189,45 @@ async def receive_connections(
                 uptime_seconds=report.system_metrics.uptime_seconds,
             )
             logger.debug("System metrics updated for node %s", node_uuid)
+
+            # Save snapshot for historical analytics
+            try:
+                await db_service.insert_node_metrics_snapshot(
+                    node_uuid=node_uuid,
+                    cpu_usage=report.system_metrics.cpu_percent,
+                    cpu_cores=report.system_metrics.cpu_cores,
+                    memory_usage=report.system_metrics.memory_percent,
+                    memory_total_bytes=report.system_metrics.memory_total_bytes,
+                    memory_used_bytes=report.system_metrics.memory_used_bytes,
+                    disk_usage=report.system_metrics.disk_percent,
+                    disk_total_bytes=report.system_metrics.disk_total_bytes,
+                    disk_used_bytes=report.system_metrics.disk_used_bytes,
+                    disk_read_speed_bps=report.system_metrics.disk_read_speed_bps,
+                    disk_write_speed_bps=report.system_metrics.disk_write_speed_bps,
+                    uptime_seconds=report.system_metrics.uptime_seconds,
+                )
+            except Exception:
+                pass  # Non-critical, don't block collector
         except Exception as e:
             logger.warning("Failed to update system metrics for node %s: %s", node_uuid, e)
+
+    # Periodic cleanup of old data (once per 24h)
+    global _last_metrics_cleanup
+    now = datetime.utcnow()
+    if (now - _last_metrics_cleanup).total_seconds() > CLEANUP_INTERVAL_HOURS * 3600:
+        _last_metrics_cleanup = now
+        try:
+            deleted = await db_service.cleanup_old_metrics_snapshots(METRICS_RETENTION_DAYS)
+            if deleted > 0:
+                logger.info("Cleaned up %d old metrics snapshots", deleted)
+        except Exception:
+            pass
+        try:
+            deleted = await db_service.cleanup_old_connections(CONNECTIONS_RETENTION_DAYS)
+            if deleted > 0:
+                logger.info("Cleaned up %d old connections", deleted)
+        except Exception:
+            pass
 
     if not report.connections:
         return JSONResponse(

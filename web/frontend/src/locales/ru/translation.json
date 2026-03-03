@@ -1697,7 +1697,18 @@
       "title": "Провайдеры и ASN",
       "tooltip": "Типы подключений, распределение ASN и флаги безопасности",
       "connectionTypes": "Типы подключений",
-      "topAsn": "Топ ASN"
+      "topAsn": "Топ ASN",
+      "connectionType": {
+        "residential": "Резидентный",
+        "fixed": "Фиксированный",
+        "mobile": "Мобильный",
+        "mobile_isp": "Мобильный ISP",
+        "isp": "ISP",
+        "hosting": "Хостинг",
+        "business": "Бизнес",
+        "edu": "Образование",
+        "unknown": "Неизвестно"
+      }
     },
     "nodes": {
       "title": "Ноды",
@@ -1713,7 +1724,19 @@
       "disk": "Диск",
       "users": "Юзеры",
       "traffic": "Трафик",
-      "speed": "Скорость"
+      "speed": "Скорость",
+      "history": {
+        "title": "История метрик",
+        "tooltip": "Средние метрики нод за выбранный период",
+        "avgCpu": "Сред. CPU",
+        "avgRam": "Сред. RAM",
+        "avgDisk": "Сред. диск",
+        "maxCpu": "Макс. CPU",
+        "maxRam": "Макс. RAM",
+        "maxDisk": "Макс. диск",
+        "samples": "Замеров",
+        "noData": "Нет исторических данных"
+      }
     },
     "retention": {
       "title": "Анализ ретенции",

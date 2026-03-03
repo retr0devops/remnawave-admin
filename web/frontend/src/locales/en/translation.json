@@ -1697,7 +1697,18 @@
       "title": "Providers & ASN",
       "tooltip": "Connection types, ASN distribution, and security flags",
       "connectionTypes": "Connection Types",
-      "topAsn": "Top ASN"
+      "topAsn": "Top ASN",
+      "connectionType": {
+        "residential": "Residential",
+        "fixed": "Fixed",
+        "mobile": "Mobile",
+        "mobile_isp": "Mobile ISP",
+        "isp": "ISP",
+        "hosting": "Hosting",
+        "business": "Business",
+        "edu": "Education",
+        "unknown": "Unknown"
+      }
     },
     "nodes": {
       "title": "Nodes",
@@ -1713,7 +1724,19 @@
       "disk": "Disk",
       "users": "Users",
       "traffic": "Traffic",
-      "speed": "Speed"
+      "speed": "Speed",
+      "history": {
+        "title": "Metrics History",
+        "tooltip": "Average node metrics over the selected period",
+        "avgCpu": "Avg CPU",
+        "avgRam": "Avg RAM",
+        "avgDisk": "Avg Disk",
+        "maxCpu": "Max CPU",
+        "maxRam": "Max RAM",
+        "maxDisk": "Max Disk",
+        "samples": "Samples",
+        "noData": "No historical data yet"
+      }
     },
     "retention": {
       "title": "Retention Analysis",

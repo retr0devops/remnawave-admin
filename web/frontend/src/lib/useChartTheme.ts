@@ -95,14 +95,17 @@ export function useChartTheme() {
       tick: isLight ? '#334155' : '#c9d1d9',
       grid: isLight ? 'rgba(148, 163, 184, 0.3)' : 'rgba(72, 79, 88, 0.3)',
       tooltipStyle: {
-        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.95)' : 'rgba(22, 27, 34, 0.95)',
-        border: `1px solid ${isLight ? 'rgba(203, 213, 225, 0.6)' : 'rgba(72, 79, 88, 0.3)'}`,
+        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.97)' : 'rgba(248, 250, 252, 0.97)',
+        border: `1px solid ${isLight ? 'rgba(203, 213, 225, 0.8)' : 'rgba(148, 163, 184, 0.5)'}`,
         borderRadius: '8px',
         backdropFilter: 'blur(12px)',
-        color: isLight ? '#1e293b' : '#c9d1d9',
+        color: isLight ? '#1e293b' : '#0f172a',
+        boxShadow: isLight
+          ? '0 4px 12px rgba(0, 0, 0, 0.08)'
+          : '0 4px 12px rgba(0, 0, 0, 0.3)',
       } as React.CSSProperties,
-      tooltipTextClass: isLight ? 'text-slate-800' : 'text-dark-50',
-      tooltipMutedClass: isLight ? 'text-slate-500' : 'text-muted-foreground',
+      tooltipTextClass: isLight ? 'text-slate-800' : 'text-slate-900',
+      tooltipMutedClass: isLight ? 'text-slate-500' : 'text-slate-600',
       mapBackground: isLight ? '#e2e8f0' : '#0d1117',
       mapTileUrl: isLight
         ? 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'

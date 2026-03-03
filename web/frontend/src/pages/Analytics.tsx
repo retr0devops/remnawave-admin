@@ -31,6 +31,8 @@ import {
 import {
   AreaChart,
   Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -39,10 +41,11 @@ import {
   PieChart,
   Pie,
   Cell,
+  Legend,
 } from 'recharts'
 import { toast } from 'sonner'
 import { advancedAnalyticsApi } from '@/api/advancedAnalytics'
-import type { GeoCity, GeoCityUser, TopUser, SharedHwidGroup, NodeFleetItem, RetentionCohort } from '@/api/advancedAnalytics'
+import type { GeoCity, GeoCityUser, TopUser, SharedHwidGroup, NodeFleetItem, RetentionCohort, NodeMetricsHistoryItem, NodeMetricsTimeseriesPoint } from '@/api/advancedAnalytics'
 import { ExportDropdown } from '@/components/ExportDropdown'
 import { exportCSV, exportJSON, formatBytesForExport } from '@/lib/export'
 
@@ -1347,7 +1350,7 @@ function ProvidersCard() {
                         </Pie>
                         <RechartsTooltip
                           contentStyle={chart.tooltipStyle}
-                          formatter={(value, name) => [`${Number(value).toLocaleString()} (${connectionTypes.find((c) => c.type === name)?.percent ?? 0}%)`, String(name)]}
+                          formatter={(value, name) => [`${Number(value).toLocaleString()} (${connectionTypes.find((c) => c.type === name)?.percent ?? 0}%)`, t(`analytics.providers.connectionType.${String(name)}`, { defaultValue: String(name) })]}
                         />
                       </PieChart>
                     </ResponsiveContainer>
@@ -1356,7 +1359,7 @@ function ProvidersCard() {
                     {connectionTypes.map((ct, i) => (
                       <div key={ct.type} className="flex items-center gap-1.5 text-xs">
                         <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
-                        <span className="text-muted-foreground">{ct.type}</span>
+                        <span className="text-muted-foreground">{t(`analytics.providers.connectionType.${ct.type}`, { defaultValue: ct.type })}</span>
                         <span className="text-white font-medium">{ct.percent}%</span>
                       </div>
                     ))}
@@ -1640,6 +1643,159 @@ const ResourceBar = memo(function ResourceBar({ value }: { value: number }) {
   )
 })
 
+// ── Node Metrics History Card ───────────────────────────────────
+
+const METRIC_COLORS = { cpu: '#ef4444', memory: '#f59e0b', disk: '#3b82f6' }
+
+function NodeMetricsHistoryCard() {
+  const { t } = useTranslation()
+  const chart = useChartTheme()
+  const [period, setPeriod] = useState('24h')
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['node-metrics-history', period],
+    queryFn: () => advancedAnalyticsApi.nodeMetricsHistory(period),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  })
+
+  const nodes: NodeMetricsHistoryItem[] = Array.isArray(data?.nodes) ? data!.nodes : []
+  const timeseries: NodeMetricsTimeseriesPoint[] = Array.isArray(data?.timeseries) ? data!.timeseries : []
+  // Build chart data: each point has timestamp + per-node cpu/memory/disk
+  const chartData = useMemo(() => {
+    if (!timeseries.length) return []
+    // Aggregate across all nodes for overview chart (avg of all nodes per bucket)
+    return timeseries.map((point) => {
+      const vals = Object.values(point.nodes)
+      const cpuVals = vals.map((v) => v.cpu).filter((v): v is number => v !== null)
+      const memVals = vals.map((v) => v.memory).filter((v): v is number => v !== null)
+      const diskVals = vals.map((v) => v.disk).filter((v): v is number => v !== null)
+      const ts = point.timestamp
+      const label = period === '30d'
+        ? ts.slice(5, 10)
+        : period === '7d'
+          ? `${ts.slice(5, 10)} ${ts.slice(11, 13)}h`
+          : ts.slice(11, 16)
+      return {
+        time: label,
+        cpu: cpuVals.length ? Math.round(cpuVals.reduce((a, b) => a + b, 0) / cpuVals.length * 10) / 10 : null,
+        memory: memVals.length ? Math.round(memVals.reduce((a, b) => a + b, 0) / memVals.length * 10) / 10 : null,
+        disk: diskVals.length ? Math.round(diskVals.reduce((a, b) => a + b, 0) / diskVals.length * 10) / 10 : null,
+      }
+    })
+  }, [timeseries, period])
+
+  return (
+    <Card className="animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <Activity className="w-5 h-5 text-primary-400" />
+            <CardTitle className="text-base">{t('analytics.nodes.history.title', { defaultValue: 'Metrics History' })}</CardTitle>
+            <InfoTooltip text={t('analytics.nodes.history.tooltip', { defaultValue: 'Average node metrics over the selected period' })} side="right" />
+          </div>
+          <div className="flex items-center gap-2">
+            <ExportDropdown
+              disabled={!nodes.length}
+              onExportCSV={() => exportCSV(nodes.map((n) => ({
+                node: n.node_name, avg_cpu: n.avg_cpu, avg_memory: n.avg_memory, avg_disk: n.avg_disk,
+                max_cpu: n.max_cpu, max_memory: n.max_memory, max_disk: n.max_disk, samples: n.samples_count,
+              })), 'node-metrics-history')}
+              onExportJSON={() => exportJSON(data, 'node-metrics-history')}
+            />
+            <PeriodSwitcher
+              value={period}
+              onChange={setPeriod}
+              options={[
+                { value: '24h', label: t('analytics.periods.24h') },
+                { value: '7d', label: t('analytics.periods.7d') },
+                { value: '30d', label: t('analytics.periods.30d') },
+              ]}
+            />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-64 w-full" />
+        ) : isError ? (
+          <QueryError onRetry={refetch} />
+        ) : !nodes.length ? (
+          <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">
+            <p>{t('analytics.nodes.history.noData', { defaultValue: 'No historical data yet' })}</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Overview chart */}
+            {chartData.length > 1 && (
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
+                    <XAxis dataKey="time" stroke={chart.axis} fontSize={10} tickLine={false} />
+                    <YAxis
+                      stroke={chart.axis}
+                      fontSize={10}
+                      tickLine={false}
+                      axisLine={false}
+                      domain={[0, 100]}
+                      tickFormatter={(v: number) => `${v}%`}
+                    />
+                    <RechartsTooltip
+                      contentStyle={chart.tooltipStyle}
+                      formatter={(value) => [`${value}%`]}
+                    />
+                    <Line type="monotone" dataKey="cpu" name="CPU" stroke={METRIC_COLORS.cpu} strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="memory" name="RAM" stroke={METRIC_COLORS.memory} strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="disk" name="Disk" stroke={METRIC_COLORS.disk} strokeWidth={2} dot={false} />
+                    <Legend
+                      verticalAlign="top"
+                      height={28}
+                      formatter={(value: string) => <span className="text-xs text-muted-foreground">{value}</span>}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Per-node table */}
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">{t('analytics.nodes.name', { defaultValue: 'Node' })}</TableHead>
+                    <TableHead className="text-xs text-center">{t('analytics.nodes.history.avgCpu', { defaultValue: 'Avg CPU' })}</TableHead>
+                    <TableHead className="text-xs text-center">{t('analytics.nodes.history.avgRam', { defaultValue: 'Avg RAM' })}</TableHead>
+                    <TableHead className="text-xs text-center">{t('analytics.nodes.history.avgDisk', { defaultValue: 'Avg Disk' })}</TableHead>
+                    <TableHead className="text-xs text-center hidden md:table-cell">{t('analytics.nodes.history.maxCpu', { defaultValue: 'Max CPU' })}</TableHead>
+                    <TableHead className="text-xs text-center hidden md:table-cell">{t('analytics.nodes.history.maxRam', { defaultValue: 'Max RAM' })}</TableHead>
+                    <TableHead className="text-xs text-center hidden md:table-cell">{t('analytics.nodes.history.maxDisk', { defaultValue: 'Max Disk' })}</TableHead>
+                    <TableHead className="text-xs text-right hidden lg:table-cell">{t('analytics.nodes.history.samples', { defaultValue: 'Samples' })}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {nodes.map((node) => (
+                    <TableRow key={node.node_uuid}>
+                      <TableCell className="text-xs font-medium">{node.node_name || node.node_uuid.slice(0, 8)}</TableCell>
+                      <TableCell className="text-center">{node.avg_cpu != null ? <ResourceBar value={node.avg_cpu} /> : '-'}</TableCell>
+                      <TableCell className="text-center">{node.avg_memory != null ? <ResourceBar value={node.avg_memory} /> : '-'}</TableCell>
+                      <TableCell className="text-center">{node.avg_disk != null ? <ResourceBar value={node.avg_disk} /> : '-'}</TableCell>
+                      <TableCell className="text-xs text-center hidden md:table-cell text-muted-foreground">{node.max_cpu != null ? `${node.max_cpu}%` : '-'}</TableCell>
+                      <TableCell className="text-xs text-center hidden md:table-cell text-muted-foreground">{node.max_memory != null ? `${node.max_memory}%` : '-'}</TableCell>
+                      <TableCell className="text-xs text-center hidden md:table-cell text-muted-foreground">{node.max_disk != null ? `${node.max_disk}%` : '-'}</TableCell>
+                      <TableCell className="text-xs text-right hidden lg:table-cell text-muted-foreground">{node.samples_count.toLocaleString()}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ── Retention Card (F6) ─────────────────────────────────────────
 
 function retentionColor(pct: number): string {
@@ -1877,7 +2033,10 @@ export default function Analytics() {
         </TabsContent>
 
         <TabsContent value="nodes">
-          <NodesCard />
+          <div className="space-y-4">
+            <NodesCard />
+            <NodeMetricsHistoryCard />
+          </div>
         </TabsContent>
 
         <TabsContent value="retention">

@@ -112,6 +112,7 @@ export function useRealtimeUpdates() {
             debouncedInvalidate(['fleet'])
             debouncedInvalidate(['systemComponents'])
             debouncedInvalidate(['node-fleet-analytics'])
+            debouncedInvalidate(['node-metrics-history'])
             break
           case 'user_update':
             debouncedInvalidate(['users'])

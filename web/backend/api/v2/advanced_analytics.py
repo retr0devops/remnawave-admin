@@ -1,5 +1,6 @@
-"""Advanced Analytics API — geo map, top users, trends."""
+"""Advanced Analytics API — geo map, top users, trends, node metrics history."""
 import logging
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -514,3 +515,67 @@ async def _compute_retention(weeks: int = 12):
     except Exception as e:
         logger.error("get_retention failed: %s", e)
         return {"cohorts": [], "overall_retention": 0}
+
+
+# ── Node Metrics History ────────────────────────────────────────
+
+@router.get("/node-metrics-history")
+@limiter.limit(RATE_ANALYTICS)
+async def get_node_metrics_history(
+    request: Request,
+    period: str = Query("24h", description="Period: 24h, 7d, 30d"),
+    node_uuid: Optional[str] = Query(None, description="Filter by node UUID"),
+    admin: AdminUser = Depends(require_permission("fleet", "view")),
+):
+    """Get historical node metrics averages for the given period."""
+    return await _compute_node_metrics_history(period=period, node_uuid=node_uuid)
+
+
+@cached("analytics:node-metrics-history", ttl=300, key_args=("period", "node_uuid"))
+async def _compute_node_metrics_history(period: str = "24h", node_uuid: Optional[str] = None):
+    from shared.database import db_service
+
+    try:
+        if not db_service.is_connected:
+            return {"nodes": [], "timeseries": []}
+
+        nodes = await db_service.get_node_metrics_history(period=period, node_uuid=node_uuid)
+        timeseries = await db_service.get_node_metrics_timeseries(period=period, node_uuid=node_uuid)
+
+        # Group timeseries by bucket
+        buckets: dict = defaultdict(dict)
+        node_names: dict = {}
+        for row in timeseries:
+            b = row.get("bucket")
+            bucket_str = b.isoformat() if hasattr(b, "isoformat") else str(b)
+            uid = str(row["node_uuid"])
+            node_names[uid] = row.get("node_name", uid[:8])
+            buckets[bucket_str][uid] = {
+                "cpu": float(row["avg_cpu"]) if row.get("avg_cpu") is not None else None,
+                "memory": float(row["avg_memory"]) if row.get("avg_memory") is not None else None,
+                "disk": float(row["avg_disk"]) if row.get("avg_disk") is not None else None,
+            }
+
+        ts_data = [{"timestamp": k, "nodes": v} for k, v in sorted(buckets.items())]
+
+        return {
+            "nodes": [
+                {
+                    "node_uuid": str(n["node_uuid"]),
+                    "node_name": n.get("node_name", ""),
+                    "avg_cpu": float(n["avg_cpu"]) if n.get("avg_cpu") is not None else None,
+                    "avg_memory": float(n["avg_memory"]) if n.get("avg_memory") is not None else None,
+                    "avg_disk": float(n["avg_disk"]) if n.get("avg_disk") is not None else None,
+                    "max_cpu": float(n["max_cpu"]) if n.get("max_cpu") is not None else None,
+                    "max_memory": float(n["max_memory"]) if n.get("max_memory") is not None else None,
+                    "max_disk": float(n["max_disk"]) if n.get("max_disk") is not None else None,
+                    "samples_count": n.get("samples_count", 0),
+                }
+                for n in nodes
+            ],
+            "timeseries": ts_data,
+            "node_names": node_names,
+        }
+    except Exception as e:
+        logger.error("get_node_metrics_history failed: %s", e)
+        return {"nodes": [], "timeseries": []}
