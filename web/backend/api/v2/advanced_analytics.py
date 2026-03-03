@@ -463,7 +463,7 @@ async def _compute_retention(weeks: int = 12):
                         uuid,
                         status,
                         used_traffic_bytes,
-                        expire_date
+                        expire_at
                     FROM users
                     WHERE created_at >= $1
                 )
@@ -472,7 +472,7 @@ async def _compute_retention(weeks: int = 12):
                     COUNT(*) as total_users,
                     COUNT(*) FILTER (WHERE status = 'ACTIVE') as active_users,
                     COUNT(*) FILTER (WHERE used_traffic_bytes > 0) as with_traffic,
-                    COUNT(*) FILTER (WHERE expire_date IS NOT NULL AND expire_date > NOW()) as with_active_sub
+                    COUNT(*) FILTER (WHERE expire_at IS NOT NULL AND expire_at > NOW()) as with_active_sub
                 FROM cohorts
                 GROUP BY cohort_week
                 ORDER BY cohort_week
