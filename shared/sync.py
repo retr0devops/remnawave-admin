@@ -823,8 +823,13 @@ class SyncService:
                     response = result.get("response", result) if isinstance(result, dict) else result
                     top_users = response.get("topUsers", []) if isinstance(response, dict) else []
 
+                    # API returns username, not uuid — build a mapping
+                    usernames = [u.get("username", "") for u in top_users if u.get("username")]
+                    username_map = await db_service.get_username_to_uuid_map(usernames) if usernames else {}
+
                     for u in top_users:
-                        user_uuid = u.get("uuid", u.get("userUuid", ""))
+                        username = u.get("username", "")
+                        user_uuid = username_map.get(username.lower(), "")
                         total_bytes = int(u.get("total", 0) or 0)
                         if user_uuid and total_bytes > 0:
                             await db_service.upsert_user_node_traffic(

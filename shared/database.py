@@ -1745,6 +1745,17 @@ class DatabaseService:
                 user_uuid, node_uuid, traffic_bytes,
             )
 
+    async def get_username_to_uuid_map(self, usernames: List[str]) -> Dict[str, str]:
+        """Get a mapping of username -> uuid for a list of usernames."""
+        if not self.is_connected or not usernames:
+            return {}
+        async with self.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT username, uuid::text FROM users WHERE LOWER(username) = ANY(SELECT LOWER(x) FROM unnest($1::text[]) AS x)",
+                usernames,
+            )
+            return {r["username"].lower(): r["uuid"] for r in rows}
+
     async def get_node_users_traffic(self, node_uuid: str) -> List[Dict[str, Any]]:
         """Get all users' traffic on a specific node, joined with username."""
         if not self.is_connected:
