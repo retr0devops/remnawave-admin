@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../store/authStore'
-import { authApi, TelegramUser } from '../api/auth'
+import { authApi, TelegramUser, AuthMethods } from '../api/auth'
 import {
   User,
   Lock,
@@ -224,6 +224,9 @@ export default function Login() {
 
   const copyTimerRef = useRef<ReturnType<typeof setTimeout>>()
 
+  // Auth methods
+  const [authMethods, setAuthMethods] = useState<AuthMethods>({ telegram: true, password: true, totp_required: false })
+
   // Setup check
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null)
   const [setupChecked, setSetupChecked] = useState(false)
@@ -258,8 +261,16 @@ export default function Login() {
       return
     }
 
-    authApi.getSetupStatus().then((status) => {
+    Promise.all([
+      authApi.getSetupStatus(),
+      authApi.getAuthMethods(),
+    ]).then(([status, methods]) => {
       setNeedsSetup(status.needs_setup)
+      setAuthMethods(methods)
+      // If telegram is disabled, show password form by default
+      if (!methods.telegram && methods.password) {
+        setShowPasswordForm(true)
+      }
       setSetupChecked(true)
     }).catch(() => {
       // If API is unreachable, fall back to login form
@@ -277,7 +288,7 @@ export default function Login() {
 
   // Setup Telegram widget
   useEffect(() => {
-    if (isAuthenticated || needsSetup) return
+    if (isAuthenticated || needsSetup || !authMethods.telegram) return
 
     window.TelegramLoginWidget = {
       dataOnauth: async (user: TelegramUser) => {
@@ -315,7 +326,7 @@ export default function Login() {
         containerRef.current.removeChild(script)
       }
     }
-  }, [isAuthenticated, navigate, login, needsSetup])
+  }, [isAuthenticated, navigate, login, needsSetup, authMethods.telegram])
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -896,29 +907,31 @@ export default function Login() {
                       <div ref={containerRef} className="flex justify-center mb-5 min-h-[40px]" />
                     )}
 
-                    {/* Toggle auth method */}
-                    <div className="text-center">
-                      <button
-                        onClick={() => {
-                          setShowPasswordForm(!showPasswordForm)
-                          clearError()
-                        }}
-                        className={cn(
-                          'text-xs text-dark-300 hover:text-teal-400',
-                          'transition-colors duration-200',
-                          'inline-flex items-center gap-1.5'
-                        )}
-                      >
-                        {showPasswordForm ? (
-                          <>{t('login.telegram')}</>
-                        ) : (
-                          <>
-                            <Lock className="h-3 w-3" />
-                            {t('login.password')}
-                          </>
-                        )}
-                      </button>
-                    </div>
+                    {/* Toggle auth method — only show if both methods are enabled */}
+                    {authMethods.telegram && authMethods.password && (
+                      <div className="text-center">
+                        <button
+                          onClick={() => {
+                            setShowPasswordForm(!showPasswordForm)
+                            clearError()
+                          }}
+                          className={cn(
+                            'text-xs text-dark-300 hover:text-teal-400',
+                            'transition-colors duration-200',
+                            'inline-flex items-center gap-1.5'
+                          )}
+                        >
+                          {showPasswordForm ? (
+                            <>{t('login.telegram')}</>
+                          ) : (
+                            <>
+                              <Lock className="h-3 w-3" />
+                              {t('login.password')}
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
               </>

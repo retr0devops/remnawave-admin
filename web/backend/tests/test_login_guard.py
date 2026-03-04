@@ -4,7 +4,11 @@ from unittest.mock import patch
 
 import pytest
 
-from web.backend.core.login_guard import LoginGuard, MAX_ATTEMPTS, LOCKOUT_SECONDS
+from web.backend.core.login_guard import LoginGuard, _get_max_attempts, _get_lockout_seconds
+
+# Use default values for tests
+MAX_ATTEMPTS = 5
+LOCKOUT_SECONDS = 900
 
 
 class TestLoginGuard:

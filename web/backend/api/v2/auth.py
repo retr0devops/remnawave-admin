@@ -49,9 +49,20 @@ from web.backend.schemas.auth import (
     PermissionEntry,
 )
 from web.backend.schemas.common import SuccessResponse
+from shared.config_service import config_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.get("/methods")
+async def get_auth_methods():
+    """Public endpoint — returns enabled auth methods for login page."""
+    return {
+        "telegram": config_service.get("auth_telegram_enabled", True),
+        "password": config_service.get("auth_password_enabled", True),
+        "totp_required": config_service.get("auth_totp_required", False),
+    }
 
 
 @router.get("/setup-status", response_model=SetupStatusResponse)
@@ -176,6 +187,10 @@ async def telegram_login(request: Request, data: TelegramAuthData):
     settings = get_web_settings()
     client_ip = get_client_ip(request)
 
+    # Check if Telegram auth is enabled
+    if not config_service.get("auth_telegram_enabled", True):
+        raise api_error(403, E.FORBIDDEN, "Telegram authentication is disabled")
+
     # Check brute-force lockout
     if login_guard.is_locked(client_ip):
         remaining = login_guard.remaining_seconds(client_ip)
@@ -195,14 +210,20 @@ async def telegram_login(request: Request, data: TelegramAuthData):
         logger.warning("Auth verification failed for user id=%d: %s", data.id, error_message)
         locked = login_guard.record_failure(client_ip)
         log_auth_failure(client_ip, f"tg:{data.id}", "telegram", error_message)
-        await notify_login_failed(
-            ip=client_ip,
-            username=f"tg:{data.id}",
-            auth_method="telegram",
-            reason=error_message,
-        )
+        if config_service.get("auth_notify_on_failure", True):
+            await notify_login_failed(
+                ip=client_ip,
+                username=f"tg:{data.id}",
+                auth_method="telegram",
+                reason=error_message,
+            )
         if locked:
-            await notify_ip_blocked(client_ip, 900, 5)
+            if config_service.get("auth_notify_on_block", True):
+                await notify_ip_blocked(
+                    client_ip,
+                    config_service.get("auth_lockout_minutes", 15) * 60,
+                    config_service.get("auth_max_attempts", 5),
+                )
         raise api_error(401, E.INVALID_TOKEN, f"Invalid Telegram auth data: {error_message}")
 
     # Check if user is in admins list
@@ -210,14 +231,20 @@ async def telegram_login(request: Request, data: TelegramAuthData):
         logger.warning(f"User {data.id} is not in admins list: {settings.admins}")
         locked = login_guard.record_failure(client_ip)
         log_auth_failure(client_ip, f"tg:{data.id}", "telegram", "Not in admins list")
-        await notify_login_failed(
-            ip=client_ip,
-            username=f"tg:{data.id} ({data.username or data.first_name})",
-            auth_method="telegram",
-            reason="Not in admins list",
-        )
+        if config_service.get("auth_notify_on_failure", True):
+            await notify_login_failed(
+                ip=client_ip,
+                username=f"tg:{data.id} ({data.username or data.first_name})",
+                auth_method="telegram",
+                reason="Not in admins list",
+            )
         if locked:
-            await notify_ip_blocked(client_ip, 900, 5)
+            if config_service.get("auth_notify_on_block", True):
+                await notify_ip_blocked(
+                    client_ip,
+                    config_service.get("auth_lockout_minutes", 15) * 60,
+                    config_service.get("auth_max_attempts", 5),
+                )
         raise api_error(403, E.NOT_AN_ADMIN)
 
     # Success — credentials valid
@@ -238,6 +265,10 @@ async def telegram_login(request: Request, data: TelegramAuthData):
             totp_enabled=bool(account.get("totp_enabled")),
             temp_token=temp_token,
         )
+
+    # If TOTP is globally required but user has no RBAC account — block full access
+    if config_service.get("auth_totp_required", False):
+        raise api_error(403, E.FORBIDDEN, "2FA is required. Please contact administrator to set up your account.")
 
     # Legacy admin (no RBAC account) — issue full tokens directly
     await notify_login_success(ip=client_ip, username=username, auth_method="telegram")
@@ -261,6 +292,10 @@ async def password_login(request: Request, data: LoginRequest):
     """
     settings = get_web_settings()
     client_ip = get_client_ip(request)
+
+    # Check if password auth is enabled
+    if not config_service.get("auth_password_enabled", True):
+        raise api_error(403, E.FORBIDDEN, "Password authentication is disabled")
 
     # Check brute-force lockout
     if login_guard.is_locked(client_ip):
@@ -289,14 +324,20 @@ async def password_login(request: Request, data: LoginRequest):
         locked = login_guard.record_failure(client_ip)
         logger.warning("Password login failed for user '%s' from %s", data.username, client_ip)
         log_auth_failure(client_ip, data.username, "password", "Invalid credentials")
-        await notify_login_failed(
-            ip=client_ip,
-            username=data.username,
-            auth_method="password",
-            reason="Invalid credentials",
-        )
+        if config_service.get("auth_notify_on_failure", True):
+            await notify_login_failed(
+                ip=client_ip,
+                username=data.username,
+                auth_method="password",
+                reason="Invalid credentials",
+            )
         if locked:
-            await notify_ip_blocked(client_ip, 900, 5)
+            if config_service.get("auth_notify_on_block", True):
+                await notify_ip_blocked(
+                    client_ip,
+                    config_service.get("auth_lockout_minutes", 15) * 60,
+                    config_service.get("auth_max_attempts", 5),
+                )
         raise api_error(401, E.INVALID_PASSWORD, "Invalid username or password")
 
     # Success — credentials valid
@@ -316,6 +357,10 @@ async def password_login(request: Request, data: LoginRequest):
             totp_enabled=bool(account.get("totp_enabled")),
             temp_token=temp_token,
         )
+
+    # If TOTP is globally required but user has no RBAC account — block full access
+    if config_service.get("auth_totp_required", False):
+        raise api_error(403, E.FORBIDDEN, "2FA is required. Please contact administrator to set up your account.")
 
     # Legacy .env admin — issue full tokens directly
     await notify_login_success(ip=client_ip, username=data.username, auth_method="password")
@@ -432,7 +477,12 @@ async def totp_confirm_setup(
         locked = login_guard.record_failure(client_ip)
         log_auth_failure(client_ip, admin.username, "totp_setup", "Invalid TOTP code")
         if locked:
-            await notify_ip_blocked(client_ip, 900, 5)
+            if config_service.get("auth_notify_on_block", True):
+                await notify_ip_blocked(
+                    client_ip,
+                    config_service.get("auth_lockout_minutes", 15) * 60,
+                    config_service.get("auth_max_attempts", 5),
+                )
         raise api_error(401, E.INVALID_TOKEN, "Invalid TOTP code")
 
     # Enable 2FA
@@ -517,7 +567,12 @@ async def totp_verify(
     locked = login_guard.record_failure(client_ip)
     log_auth_failure(client_ip, admin.username, "totp", "Invalid TOTP/backup code")
     if locked:
-        await notify_ip_blocked(client_ip, 900, 5)
+        if config_service.get("auth_notify_on_block", True):
+            await notify_ip_blocked(
+                client_ip,
+                config_service.get("auth_lockout_minutes", 15) * 60,
+                config_service.get("auth_max_attempts", 5),
+            )
     raise api_error(401, E.INVALID_TOKEN, "Invalid code")
 
 

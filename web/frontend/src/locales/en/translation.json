@@ -2222,14 +2222,17 @@
       "collector": "Data Collector",
       "limits": "Limits",
       "appearance": "Appearance",
-      "mailserver": "Mail Server"
+      "mailserver": "Mail Server",
+      "security": "Security"
     },
     "subcategories": {
       "topics": "Notification topics",
       "weights": "Score component weights",
       "thresholds": "Detection thresholds",
       "hard_block": "Hard block",
-      "trial": "Trial user detection"
+      "trial": "Trial user detection",
+      "auth_methods": "Auth Methods",
+      "brute_force": "Brute-Force Protection"
     },
     "sync": {
       "title": "Sync",
@@ -2410,6 +2413,38 @@
       "panel_name": {
         "label": "Panel name",
         "description": "Project name displayed in the sidebar (next to the logo)"
+      },
+      "auth_telegram_enabled": {
+        "label": "Telegram Authentication",
+        "description": "Allow login via Telegram Login Widget"
+      },
+      "auth_password_enabled": {
+        "label": "Password Authentication",
+        "description": "Allow login with username and password"
+      },
+      "auth_totp_required": {
+        "label": "Mandatory 2FA (TOTP)",
+        "description": "Require TOTP setup for all accounts"
+      },
+      "auth_max_attempts": {
+        "label": "Max attempts before lockout",
+        "description": "Number of failed login attempts before IP is blocked"
+      },
+      "auth_lockout_minutes": {
+        "label": "Lockout duration (min)",
+        "description": "How long an IP is blocked after exceeding the attempt limit"
+      },
+      "auth_fail2ban_logging": {
+        "label": "Fail2ban logging",
+        "description": "Log failed login attempts to auth_failures.log"
+      },
+      "auth_notify_on_block": {
+        "label": "Notify on IP block",
+        "description": "Send Telegram notification when an IP is blocked"
+      },
+      "auth_notify_on_failure": {
+        "label": "Notify on failed login",
+        "description": "Send Telegram notification on every failed login attempt"
       }
     },
     "inDb": "In DB",

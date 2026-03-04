@@ -1,6 +1,7 @@
 """Brute-force protection for login endpoints.
 
 Tracks failed login attempts per IP and locks out after threshold.
+Settings are read from config_service at runtime (auth_max_attempts, auth_lockout_minutes).
 """
 import threading
 import time
@@ -10,9 +11,23 @@ from typing import Dict
 
 logger = logging.getLogger(__name__)
 
-MAX_ATTEMPTS = 5           # Lock after this many consecutive failures
-LOCKOUT_SECONDS = 900      # 15 minutes lockout
 CLEANUP_INTERVAL = 300     # Clean stale entries every 5 minutes
+
+
+def _get_max_attempts() -> int:
+    try:
+        from shared.config_service import config_service
+        return config_service.get("auth_max_attempts", 5)
+    except Exception:
+        return 5
+
+
+def _get_lockout_seconds() -> int:
+    try:
+        from shared.config_service import config_service
+        return config_service.get("auth_lockout_minutes", 15) * 60
+    except Exception:
+        return 900
 
 
 @dataclass
@@ -65,11 +80,13 @@ class LoginGuard:
             rec.failures += 1
             rec.last_attempt = time.time()
 
-            if rec.failures >= MAX_ATTEMPTS:
-                rec.locked_until = time.time() + LOCKOUT_SECONDS
+            max_attempts = _get_max_attempts()
+            lockout_seconds = _get_lockout_seconds()
+            if rec.failures >= max_attempts:
+                rec.locked_until = time.time() + lockout_seconds
                 logger.warning(
                     "IP %s locked out for %ds after %d failed login attempts",
-                    ip, LOCKOUT_SECONDS, rec.failures,
+                    ip, lockout_seconds, rec.failures,
                 )
                 return True
             return False
@@ -85,9 +102,10 @@ class LoginGuard:
         if now - self._last_cleanup < CLEANUP_INTERVAL:
             return
         self._last_cleanup = now
+        lockout_seconds = _get_lockout_seconds()
         stale = [
             ip for ip, rec in self._records.items()
-            if rec.locked_until < now and now - rec.last_attempt > LOCKOUT_SECONDS
+            if rec.locked_until < now and now - rec.last_attempt > lockout_seconds
         ]
         for ip in stale:
             del self._records[ip]

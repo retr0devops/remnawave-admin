@@ -2222,14 +2222,17 @@
       "collector": "Коллектор данных",
       "limits": "Лимиты",
       "appearance": "Внешний вид",
-      "mailserver": "Почтовый сервер"
+      "mailserver": "Почтовый сервер",
+      "security": "Безопасность"
     },
     "subcategories": {
       "topics": "Топики уведомлений",
       "weights": "Веса компонентов скора",
       "thresholds": "Пороги детекции",
       "hard_block": "Жёсткая блокировка",
-      "trial": "Определение триальных пользователей"
+      "trial": "Определение триальных пользователей",
+      "auth_methods": "Методы авторизации",
+      "brute_force": "Защита от перебора"
     },
     "sync": {
       "title": "Синхронизация",
@@ -2410,6 +2413,38 @@
       "panel_name": {
         "label": "Название панели",
         "description": "Отображаемое название проекта в боковом меню (рядом с логотипом)"
+      },
+      "auth_telegram_enabled": {
+        "label": "Авторизация через Telegram",
+        "description": "Разрешить вход через Telegram Login Widget"
+      },
+      "auth_password_enabled": {
+        "label": "Авторизация по паролю",
+        "description": "Разрешить вход по логину и паролю"
+      },
+      "auth_totp_required": {
+        "label": "Обязательная 2FA (TOTP)",
+        "description": "Требовать настройку TOTP для всех аккаунтов"
+      },
+      "auth_max_attempts": {
+        "label": "Макс. попыток до блокировки",
+        "description": "Количество неудачных попыток входа до блокировки IP-адреса"
+      },
+      "auth_lockout_minutes": {
+        "label": "Длительность блокировки (мин)",
+        "description": "На сколько минут блокируется IP после превышения лимита попыток"
+      },
+      "auth_fail2ban_logging": {
+        "label": "Fail2ban логирование",
+        "description": "Записывать неудачные попытки входа в auth_failures.log"
+      },
+      "auth_notify_on_block": {
+        "label": "Уведомление при блокировке IP",
+        "description": "Отправлять уведомление в Telegram при блокировке IP-адреса"
+      },
+      "auth_notify_on_failure": {
+        "label": "Уведомление при неудачном входе",
+        "description": "Отправлять уведомление в Telegram при каждой неудачной попытке входа"
       }
     },
     "inDb": "В БД",

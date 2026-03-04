@@ -73,6 +73,12 @@ export interface SetupStatus {
   needs_setup: boolean
 }
 
+export interface AuthMethods {
+  telegram: boolean
+  password: boolean
+  totp_required: boolean
+}
+
 interface ApiError {
   detail: string
   code?: string
@@ -107,6 +113,18 @@ function getErrorMessage(error: unknown): string {
 }
 
 export const authApi = {
+  /**
+   * Get available auth methods (public endpoint)
+   */
+  getAuthMethods: async (): Promise<AuthMethods> => {
+    try {
+      const response = await client.get<AuthMethods>('/auth/methods')
+      return response.data
+    } catch {
+      return { telegram: true, password: true, totp_required: false }
+    }
+  },
+
   /**
    * Check if initial setup (first admin registration) is needed
    */

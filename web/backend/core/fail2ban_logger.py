@@ -36,6 +36,12 @@ def _get_logger() -> logging.Logger:
 
 def log_auth_failure(ip: str, username: str, method: str, reason: str = "") -> None:
     """Log a failed authentication attempt for fail2ban to pick up."""
+    try:
+        from shared.config_service import config_service
+        if not config_service.get("auth_fail2ban_logging", True):
+            return
+    except Exception:
+        pass  # If config_service unavailable, log by default
     safe_user = username.replace(" ", "_")[:100]
     safe_reason = reason.replace("\n", " ")[:200]
     _get_logger().warning(
