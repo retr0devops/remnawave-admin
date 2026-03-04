@@ -30,7 +30,7 @@ violation_detector = IntelligentViolationDetector(db_service, connection_monitor
 
 # Per-user cooldown for violation checks (avoid re-checking every 30s batch)
 _violation_check_cooldown: dict[str, datetime] = {}
-VIOLATION_CHECK_COOLDOWN_MINUTES = 5
+VIOLATION_CHECK_COOLDOWN_MINUTES = 15
 MAX_COOLDOWN_SIZE = 10000
 
 # Periodic cleanup of old violations
@@ -537,15 +537,21 @@ async def _check_single_user(user_uuid: str, min_score: float, sem: asyncio.Sema
                 user_uuid, window_minutes=60, excluded_analyzers=excluded_analyzers
             )
 
-            # Evict oldest 20% entries if cooldown dict is too large
-            if len(_violation_check_cooldown) > MAX_COOLDOWN_SIZE:
-                sorted_keys = sorted(_violation_check_cooldown, key=_violation_check_cooldown.get)
-                for k in sorted_keys[:len(sorted_keys) // 5]:
-                    _violation_check_cooldown.pop(k, None)
+            had_violation = bool(violation_score and violation_score.total >= min_score)
 
-            _violation_check_cooldown[user_uuid] = datetime.utcnow()
+            # Ставим кулдаун только если нарушений нет — при нарушении проверяем каждый раз
+            if not had_violation:
+                # Evict oldest 20% entries if cooldown dict is too large
+                if len(_violation_check_cooldown) > MAX_COOLDOWN_SIZE:
+                    sorted_keys = sorted(_violation_check_cooldown, key=_violation_check_cooldown.get)
+                    for k in sorted_keys[:len(sorted_keys) // 5]:
+                        _violation_check_cooldown.pop(k, None)
+                _violation_check_cooldown[user_uuid] = datetime.utcnow()
+            else:
+                # Сбрасываем кулдаун чтобы не пропустить продолжение нарушения
+                _violation_check_cooldown.pop(user_uuid, None)
 
-            if violation_score and violation_score.total >= min_score:
+            if had_violation:
                 logger.warning(
                     "Violation detected: user=%s score=%.1f action=%s reasons=%s",
                     user_uuid, violation_score.total,
