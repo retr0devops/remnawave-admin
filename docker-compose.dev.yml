@@ -1,7 +1,6 @@
 # =============================================
 # Dev-окружение — использует образы с тегом :dev
 # Запуск:  docker compose -f docker-compose.dev.yml up -d
-# С веб-панелью: docker compose -f docker-compose.dev.yml --profile web up -d
 # =============================================
 
 services:
@@ -95,7 +94,7 @@ services:
       retries: 5
 
   # ===========================================
-  # Веб-панель (опционально, --profile web)
+  # Веб-панель
   # ===========================================
 
   web-backend:
@@ -131,8 +130,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    profiles:
-      - web
 
   web-frontend:
     image: ghcr.io/case211/remnawave-admin-web-frontend:dev
@@ -148,8 +145,6 @@ services:
       - remnawave-network
     depends_on:
       - web-backend
-    profiles:
-      - web
 
 volumes:
   postgres_data:
