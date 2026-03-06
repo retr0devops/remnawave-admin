@@ -153,7 +153,7 @@ export default function Header({ onMenuToggle, onSearchClick }: HeaderProps) {
 
           {/* Dropdown */}
           {dropdownOpen && (
-            <div className="absolute right-0 top-full mt-2 w-96 max-w-[calc(100vw-2rem)] bg-[var(--glass-bg)] backdrop-blur-[var(--glass-blur-heavy)] border border-[var(--glass-border)] rounded-xl shadow-2xl z-50 animate-fade-in overflow-hidden">
+            <div className="absolute right-0 top-full mt-2 w-96 max-w-[calc(100vw-2rem)] bg-[rgb(18,22,30)] backdrop-blur-[var(--glass-blur-heavy)] border border-[var(--glass-border)] rounded-xl shadow-2xl z-50 animate-fade-in overflow-hidden">
               {/* Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--glass-border)]">
                 <h3 className="text-sm font-semibold text-white">{t('notifications.title')}</h3>

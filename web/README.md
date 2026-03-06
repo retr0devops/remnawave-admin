@@ -97,8 +97,13 @@ admin.yourdomain.com {
         reverse_proxy web-backend:8081
     }
 
-    # WebSocket
+    # WebSocket (браузер — реалтайм обновления)
     handle /ws/* {
+        reverse_proxy web-backend:8081
+    }
+
+    # WebSocket (node-agent — связь с нодами)
+    handle /api/v2/agent/ws {
         reverse_proxy web-backend:8081
     }
 }
@@ -162,13 +167,27 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
         }
 
-        # WebSocket
+        # WebSocket — node-agent (связь с нодами)
+        location /api/v2/agent/ws {
+            proxy_pass http://backend;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+        }
+
+        # WebSocket — браузер (реалтайм обновления)
         location /ws/ {
             proxy_pass http://backend;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection "upgrade";
             proxy_set_header Host $host;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
         }
     }
 }
@@ -217,6 +236,10 @@ docker run -d \
 1. Проверьте, что `TELEGRAM_BOT_USERNAME` указан правильно (без @)
 2. Убедитесь, что домен добавлен в настройках бота в BotFather
 3. Сайт должен работать по HTTPS
+
+### Node-agent: "WS connection error: server rejected WebSocket connection: HTTP 404"
+
+Nginx не проксирует WebSocket для node-agent. Добавьте в конфиг nginx отдельный `location` для `/api/v2/agent/ws` с заголовками `Upgrade` и `Connection` (см. примеры конфигов выше). Без этого агент не сможет установить постоянное соединение — реалтайм-фичи (терминал, live-статус ноды) не будут работать.
 
 ### Ошибка подключения к базе данных
 
