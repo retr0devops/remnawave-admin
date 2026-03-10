@@ -354,7 +354,7 @@ async def exec_script(
 async def get_exec_status(
     request: Request,
     exec_id: int,
-    admin: AdminUser = Depends(require_permission("fleet", "view")),
+    admin: AdminUser = Depends(require_permission("fleet", "scripts")),
 ):
     """Get execution status and output."""
     from shared.database import db_service
@@ -438,7 +438,12 @@ def _parse_repo_url(url: str) -> tuple:
 
 
 async def _download_script_content(url: str) -> str:
-    """Download script content from URL. Max 1MB."""
+    """Download script content from URL. Max 1MB. Only allows github.com/raw.githubusercontent.com."""
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    allowed_hosts = {"github.com", "raw.githubusercontent.com"}
+    if parsed.hostname not in allowed_hosts:
+        raise api_error(400, E.INVALID_GITHUB_URL)
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
         resp = await client.get(url, headers={"User-Agent": "remnawave-admin/script-import"})
         resp.raise_for_status()

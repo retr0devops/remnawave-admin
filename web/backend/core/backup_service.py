@@ -240,13 +240,20 @@ def list_backup_files() -> List[dict]:
     return files
 
 
+def _safe_backup_path(filename: str) -> Optional[Path]:
+    """Resolve backup path with full path traversal protection."""
+    if not filename or ".." in filename or "/" in filename or "\\" in filename:
+        return None
+    filepath = (BACKUP_DIR / filename).resolve()
+    if not str(filepath).startswith(str(BACKUP_DIR.resolve())):
+        return None
+    return filepath
+
+
 def delete_backup_file(filename: str) -> bool:
     """Delete a backup file."""
-    filepath = BACKUP_DIR / filename
-    # Prevent path traversal
-    if ".." in filename or "/" in filename or "\\" in filename:
-        return False
-    if filepath.exists() and filepath.is_file():
+    filepath = _safe_backup_path(filename)
+    if filepath and filepath.exists() and filepath.is_file():
         filepath.unlink()
         return True
     return False
@@ -254,9 +261,7 @@ def delete_backup_file(filename: str) -> bool:
 
 def get_backup_filepath(filename: str) -> Optional[Path]:
     """Get the full path to a backup file, with path traversal protection."""
-    if ".." in filename or "/" in filename or "\\" in filename:
-        return None
-    filepath = BACKUP_DIR / filename
-    if filepath.exists() and filepath.is_file():
+    filepath = _safe_backup_path(filename)
+    if filepath and filepath.exists() and filepath.is_file():
         return filepath
     return None

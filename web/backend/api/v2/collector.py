@@ -31,6 +31,7 @@ violation_detector = IntelligentViolationDetector(db_service, connection_monitor
 
 # Per-user cooldown for violation checks (avoid re-checking every 30s batch)
 _violation_check_cooldown: dict[str, datetime] = {}
+_cooldown_lock = asyncio.Lock()
 VIOLATION_CHECK_COOLDOWN_MINUTES = 15
 MAX_COOLDOWN_SIZE = 10000
 
@@ -46,19 +47,24 @@ CONNECTIONS_RETENTION_DAYS = 30
 # Semaphore: limit concurrent background violation detection batches
 _violation_semaphore = asyncio.Semaphore(3)
 
-# Кэш имён нод: {node_uuid: node_name}
-_node_name_cache: dict[str, str] = {}
+# Кэш имён нод: {node_uuid: (node_name, cached_at)}
+_node_name_cache: dict[str, tuple[str, datetime]] = {}
+_NODE_NAME_TTL_MINUTES = 30
 
 
 async def _get_node_name(node_uuid: str) -> str:
-    """Вернуть имя ноды по UUID (с кэшем). Fallback — первые 8 символов UUID."""
-    if node_uuid not in _node_name_cache:
-        try:
-            node = await db_service.get_node_by_uuid(node_uuid)
-            _node_name_cache[node_uuid] = node.get("name") or node_uuid[:8] if node else node_uuid[:8]
-        except Exception:
-            return node_uuid[:8]
-    return _node_name_cache[node_uuid]
+    """Вернуть имя ноды по UUID (с кэшем и TTL). Fallback — первые 8 символов UUID."""
+    cached = _node_name_cache.get(node_uuid)
+    now = datetime.now()
+    if cached and (now - cached[1]).total_seconds() < _NODE_NAME_TTL_MINUTES * 60:
+        return cached[0]
+    try:
+        node = await db_service.get_node_by_uuid(node_uuid)
+        name = node.get("name") or node_uuid[:8] if node else node_uuid[:8]
+        _node_name_cache[node_uuid] = (name, now)
+        return name
+    except Exception:
+        return cached[0] if cached else node_uuid[:8]
 
 router = APIRouter()
 

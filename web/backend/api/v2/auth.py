@@ -675,6 +675,7 @@ async def get_current_user(admin: AdminUser = Depends(get_current_admin)):
 
 
 @router.post("/change-password", response_model=SuccessResponse)
+@limiter.limit("5/minute")
 async def change_password(
     request: Request,
     data: ChangePasswordRequest,
