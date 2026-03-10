@@ -981,6 +981,184 @@ function SubscriptionInfoDialog({
   )
 }
 
+interface IpNode {
+  nodeUuid: string
+  nodeName: string
+  countryCode: string
+  ips: string[]
+}
+
+interface FetchIpsResult {
+  isCompleted: boolean
+  isFailed: boolean
+  progress: { total: number; completed: number; percent: number }
+  result: { success: boolean; userUuid: string; userId: string; nodes: IpNode[] } | null
+}
+
+function IpControlDialog({
+  open,
+  onOpenChange,
+  userUuid,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  userUuid: string
+}) {
+  const { t } = useTranslation()
+  const [jobId, setJobId] = useState<string | null>(null)
+  const [polling, setPolling] = useState(false)
+  const [result, setResult] = useState<FetchIpsResult | null>(null)
+  const [dropping, setDropping] = useState(false)
+
+  // Start fetch when dialog opens
+  useEffect(() => {
+    if (!open) {
+      setJobId(null)
+      setPolling(false)
+      setResult(null)
+      return
+    }
+    if (!userUuid) return
+
+    let cancelled = false
+    const start = async () => {
+      try {
+        const { data } = await client.post(`/users/${userUuid}/fetch-ips`)
+        if (cancelled) return
+        setJobId(data.jobId)
+        setPolling(true)
+      } catch {
+        if (!cancelled) toast.error(t('common.error'))
+      }
+    }
+    start()
+    return () => { cancelled = true }
+  }, [open, userUuid, t])
+
+  // Poll for result
+  useEffect(() => {
+    if (!polling || !jobId || !userUuid) return
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const { data } = await client.get(`/users/${userUuid}/fetch-ips/result/${jobId}`)
+        if (cancelled) return
+        setResult(data)
+        if (data.isCompleted || data.isFailed) {
+          setPolling(false)
+        }
+      } catch {
+        if (!cancelled) {
+          setPolling(false)
+          toast.error(t('common.error'))
+        }
+      }
+    }
+    poll()
+    const interval = setInterval(poll, 1500)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [polling, jobId, userUuid, t])
+
+  const totalIps = result?.result?.nodes?.reduce((sum, n) => sum + n.ips.length, 0) ?? 0
+
+  const handleDrop = async () => {
+    setDropping(true)
+    try {
+      await client.post(`/users/${userUuid}/drop-connections`, { targetNodes: { target: 'allNodes' } })
+      toast.success(t('ipControl.dropped', { defaultValue: 'Connections dropped' }))
+      onOpenChange(false)
+    } catch {
+      toast.error(t('common.error'))
+    } finally {
+      setDropping(false)
+    }
+  }
+
+  const isLoading = polling || (!result && !!jobId)
+  const hasIps = result?.isCompleted && result.result?.nodes && result.result.nodes.length > 0
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Network className="h-5 w-5" />
+            {t('ipControl.title', { defaultValue: 'IP Addresses' })}
+          </DialogTitle>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              {result?.progress ? (
+                <span>{t('ipControl.progress', { defaultValue: 'Scanning nodes...' })} {result.progress.percent}%</span>
+              ) : (
+                <span>{t('ipControl.starting', { defaultValue: 'Starting scan...' })}</span>
+              )}
+            </div>
+            {result?.progress && (
+              <div className="w-full bg-[var(--glass-bg)] rounded-full h-2">
+                <div
+                  className="bg-primary-500 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${result.progress.percent}%` }}
+                />
+              </div>
+            )}
+          </div>
+        ) : result?.isFailed ? (
+          <p className="text-sm text-red-400">{t('ipControl.failed', { defaultValue: 'Failed to fetch IPs' })}</p>
+        ) : hasIps ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">
+                {t('ipControl.found', { defaultValue: 'Found' })}: {totalIps} IP, {result!.result!.nodes.length} {t('ipControl.nodes', { defaultValue: 'nodes' })}
+              </span>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDrop}
+                disabled={dropping}
+                className="gap-1.5"
+              >
+                <X className="w-3.5 h-3.5" />
+                {t('ipControl.drop', { defaultValue: 'Drop All' })}
+              </Button>
+            </div>
+            <div className="max-h-72 overflow-y-auto space-y-2">
+              {result!.result!.nodes.map((node) => (
+                <div key={node.nodeUuid} className="bg-[var(--glass-bg)] rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Server className="w-3.5 h-3.5 text-primary-400" />
+                    <span className="text-sm font-medium text-white">{node.nodeName}</span>
+                    {node.countryCode && (
+                      <Badge variant="outline" className="text-[10px] px-1.5">{node.countryCode}</Badge>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {node.ips.map((ip) => (
+                      <Badge
+                        key={ip}
+                        variant="secondary"
+                        className="text-xs font-mono cursor-pointer hover:bg-primary-600/20"
+                        onClick={() => { navigator.clipboard.writeText(ip); toast.success('Copied') }}
+                      >
+                        {ip}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : result?.isCompleted ? (
+          <p className="text-sm text-muted-foreground">{t('ipControl.noIps', { defaultValue: 'No active connections found' })}</p>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export default function UserDetail() {
   const { t } = useTranslation()
   const { formatDate } = useFormatters()
@@ -1008,6 +1186,7 @@ export default function UserDetail() {
   const [copied, setCopied] = useState(false)
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [subInfoOpen, setSubInfoOpen] = useState(false)
+  const [ipsDialogOpen, setIpsDialogOpen] = useState(false)
   const qrRef = useRef<HTMLDivElement>(null)
   const canEdit = useHasPermission('users', 'edit')
   const canDelete = useHasPermission('users', 'delete')
@@ -2111,6 +2290,15 @@ export default function UserDetail() {
                         <Eye className="h-3.5 w-3.5 mr-1" />
                         Info
                       </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIpsDialogOpen(true)}
+                        className="flex-shrink-0"
+                      >
+                        <Network className="h-3.5 w-3.5 mr-1" />
+                        IPs
+                      </Button>
                     </div>
                   </div>
                 ) : user.subscription_uuid ? (
@@ -2245,6 +2433,16 @@ export default function UserDetail() {
                   <Settings className="w-4 h-4" />
                   {t('violations.exclusions.configureButton')}
                 </Button>
+                {/* IP Control */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2 mt-1"
+                  onClick={() => setIpsDialogOpen(true)}
+                >
+                  <Network className="w-4 h-4" />
+                  {t('ipControl.fetchIps', { defaultValue: 'Fetch IPs' })}
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -2364,6 +2562,13 @@ export default function UserDetail() {
       <SubscriptionInfoDialog
         open={subInfoOpen}
         onOpenChange={setSubInfoOpen}
+        userUuid={user?.uuid || ''}
+      />
+
+      {/* IP Control Dialog */}
+      <IpControlDialog
+        open={ipsDialogOpen}
+        onOpenChange={setIpsDialogOpen}
         userUuid={user?.uuid || ''}
       />
 

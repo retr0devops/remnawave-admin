@@ -1181,6 +1181,22 @@ class RemnawaveApiClient:
         """Получает топ пользователей по количеству HWID устройств."""
         return await self._get("/api/hwid/devices/top-users", params={"limit": limit})
 
+    # --- IP Control ---
+    async def fetch_user_ips(self, user_uuid: str) -> dict:
+        """Запускает сбор IP-адресов пользователя. Возвращает jobId."""
+        return await self._post(f"/api/ip-control/fetch-ips/{user_uuid}")
+
+    async def get_fetch_ips_result(self, job_id: str) -> dict:
+        """Получает результат сбора IP-адресов по jobId."""
+        return await self._get(f"/api/ip-control/fetch-ips/result/{job_id}")
+
+    async def drop_connections(self, drop_by: dict, target_nodes: dict) -> dict:
+        """Сбрасывает активные соединения пользователя."""
+        return await self._post("/api/ip-control/drop-connections", json={
+            "dropBy": drop_by,
+            "targetNodes": target_nodes,
+        })
+
     # --- API Tokens ---
     async def get_tokens(self) -> dict:
         return await self._get("/api/tokens")

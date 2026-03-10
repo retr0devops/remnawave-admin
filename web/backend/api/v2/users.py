@@ -1174,3 +1174,72 @@ async def get_subscription_info(
         raise api_error(502, E.API_SERVICE_UNAVAILABLE)
 
 
+# ── IP Control ────────────────────────────────────────────────────
+
+@router.post("/{user_uuid}/fetch-ips")
+async def fetch_user_ips(
+    user_uuid: str,
+    admin: AdminUser = Depends(require_permission("users", "view")),
+):
+    """Запускает сбор IP-адресов пользователя через Panel API."""
+    from shared.api_client import api_client
+
+    try:
+        result = await api_client.fetch_user_ips(user_uuid)
+        payload = result.get("response", result) if isinstance(result, dict) else result
+        return payload
+    except Exception as e:
+        logger.error("Failed to fetch IPs for %s: %s", user_uuid, e)
+        raise api_error(502, E.API_SERVICE_UNAVAILABLE)
+
+
+@router.get("/{user_uuid}/fetch-ips/result/{job_id}")
+async def get_fetch_ips_result(
+    user_uuid: str,
+    job_id: str,
+    admin: AdminUser = Depends(require_permission("users", "view")),
+):
+    """Получает результат сбора IP-адресов по jobId."""
+    from shared.api_client import api_client
+
+    try:
+        result = await api_client.get_fetch_ips_result(job_id)
+        payload = result.get("response", result) if isinstance(result, dict) else result
+        return payload
+    except Exception as e:
+        logger.error("Failed to get fetch IPs result for job %s: %s", job_id, e)
+        raise api_error(502, E.API_SERVICE_UNAVAILABLE)
+
+
+@router.post("/{user_uuid}/drop-connections")
+async def drop_user_connections(
+    request: Request,
+    user_uuid: str,
+    admin: AdminUser = Depends(require_permission("users", "edit")),
+):
+    """Сбрасывает активные соединения пользователя."""
+    from shared.api_client import api_client
+
+    body = await request.json()
+    target_nodes = body.get("targetNodes", {"target": "allNodes"})
+
+    try:
+        result = await api_client.drop_connections(
+            drop_by={"by": "userUuids", "userUuids": [user_uuid]},
+            target_nodes=target_nodes,
+        )
+        payload = result.get("response", result) if isinstance(result, dict) else result
+
+        await write_audit_log(
+            admin_id=admin.account_id, admin_username=admin.username,
+            action="user.drop_connections", resource="users", resource_id=user_uuid,
+            details=json.dumps({"target_nodes": target_nodes}),
+            ip_address=get_client_ip(request),
+        )
+
+        return payload
+    except Exception as e:
+        logger.error("Failed to drop connections for %s: %s", user_uuid, e)
+        raise api_error(502, E.API_SERVICE_UNAVAILABLE)
+
+
