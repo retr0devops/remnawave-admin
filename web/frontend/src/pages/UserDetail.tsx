@@ -1110,7 +1110,7 @@ function IpControlDialog({
           <p className="text-sm text-red-400">{t('ipControl.failed', { defaultValue: 'Failed to fetch IPs' })}</p>
         ) : hasIps ? (
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <span className="text-sm text-muted-foreground">
                 {t('ipControl.found', { defaultValue: 'Found' })}: {totalIps} IP, {result!.result!.nodes.length} {t('ipControl.nodes', { defaultValue: 'nodes' })}
               </span>
@@ -1119,7 +1119,7 @@ function IpControlDialog({
                 size="sm"
                 onClick={handleDrop}
                 disabled={dropping}
-                className="gap-1.5"
+                className="gap-1.5 shrink-0"
               >
                 <X className="w-3.5 h-3.5" />
                 {t('ipControl.drop', { defaultValue: 'Drop All' })}
@@ -1128,9 +1128,9 @@ function IpControlDialog({
             <div className="max-h-72 overflow-y-auto space-y-2">
               {result!.result!.nodes.map((node) => (
                 <div key={node.nodeUuid} className="bg-[var(--glass-bg)] rounded-lg p-3">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <Server className="w-3.5 h-3.5 text-primary-400" />
-                    <span className="text-sm font-medium text-white">{node.nodeName}</span>
+                  <div className="flex items-center gap-2 mb-1.5 min-w-0">
+                    <Server className="w-3.5 h-3.5 text-primary-400 shrink-0" />
+                    <span className="text-sm font-medium text-white truncate">{node.nodeName}</span>
                     {node.countryCode && (
                       <Badge variant="outline" className="text-[10px] px-1.5">{node.countryCode}</Badge>
                     )}
@@ -2261,42 +2261,38 @@ export default function UserDetail() {
                         )}
                       >
                         {copied ? (
-                          <>
-                            <Check className="h-3.5 w-3.5 mr-1" />
-                            OK
-                          </>
+                          <Check className="h-3.5 w-3.5" />
                         ) : (
-                          <>
-                            <Copy className="h-3.5 w-3.5 mr-1" />
-                            {t('userDetail.subscription.copy')}
-                          </>
+                          <Copy className="h-3.5 w-3.5" />
                         )}
                       </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => setQrDialogOpen(true)}
-                        className="flex-shrink-0"
+                        className="h-7 px-2.5 text-xs gap-1"
                       >
-                        <QrCode className="h-3.5 w-3.5 mr-1" />
+                        <QrCode className="h-3.5 w-3.5" />
                         QR
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => setSubInfoOpen(true)}
-                        className="flex-shrink-0"
+                        className="h-7 px-2.5 text-xs gap-1"
                       >
-                        <Eye className="h-3.5 w-3.5 mr-1" />
+                        <Eye className="h-3.5 w-3.5" />
                         Info
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => setIpsDialogOpen(true)}
-                        className="flex-shrink-0"
+                        className="h-7 px-2.5 text-xs gap-1"
                       >
-                        <Network className="h-3.5 w-3.5 mr-1" />
+                        <Network className="h-3.5 w-3.5" />
                         IPs
                       </Button>
                     </div>
