@@ -139,6 +139,26 @@ async def create_external_squad(
         raise api_error(502, E.API_SERVICE_UNAVAILABLE)
 
 
+@router.patch("/external/{squad_uuid}")
+async def update_external_squad(
+    squad_uuid: str,
+    body: UpdateExternalSquadRequest,
+    admin: AdminUser = Depends(require_permission("users", "edit")),
+):
+    """Update an external squad via Panel API."""
+    from shared.api_client import api_client
+    try:
+        payload = {"uuid": squad_uuid}
+        if body.name is not None:
+            payload["name"] = body.name
+        result = await api_client.update_external_squad(payload)
+        resp = result.get("response", result) if isinstance(result, dict) else result
+        return resp
+    except Exception as e:
+        logger.error("Failed to update external squad %s: %s", squad_uuid, e)
+        raise api_error(502, E.API_SERVICE_UNAVAILABLE)
+
+
 @router.delete("/external/{squad_uuid}")
 async def delete_external_squad(
     squad_uuid: str,
@@ -151,4 +171,21 @@ async def delete_external_squad(
         return {"success": True}
     except Exception as e:
         logger.error("Failed to delete external squad %s: %s", squad_uuid, e)
+        raise api_error(502, E.API_SERVICE_UNAVAILABLE)
+
+
+# ── Inbounds (for squad editing) ─────────────────────────────────
+
+@router.get("/inbounds")
+async def list_inbounds(
+    admin: AdminUser = Depends(require_permission("users", "view")),
+):
+    """List all available inbounds from Panel API."""
+    from shared.api_client import api_client
+    try:
+        result = await api_client.get_all_inbounds()
+        payload = result.get("response", result) if isinstance(result, dict) else result
+        return payload if isinstance(payload, list) else []
+    except Exception as e:
+        logger.error("Failed to list inbounds: %s", e)
         raise api_error(502, E.API_SERVICE_UNAVAILABLE)

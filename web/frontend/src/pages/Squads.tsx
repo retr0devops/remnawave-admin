@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { Plus, Trash2, UsersRound, Globe, Hash } from 'lucide-react'
-import { squadsApi } from '@/api/squads'
+import { Plus, Trash2, UsersRound, Globe, Hash, Pencil } from 'lucide-react'
+import { squadsApi, type InternalSquad, type ExternalSquad } from '@/api/squads'
 import { usePermissionStore } from '@/store/permissionStore'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -11,6 +11,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import { QueryError } from '@/components/QueryError'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -25,25 +27,50 @@ function InternalSquadsTab() {
   const qc = useQueryClient()
   const hasPermission = usePermissionStore((s) => s.hasPermission)
   const canCreate = hasPermission('users', 'create')
+  const canEdit = hasPermission('users', 'edit')
   const canDelete = hasPermission('users', 'delete')
 
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
+  const [newInbounds, setNewInbounds] = useState<string[]>([])
   const [deleteUuid, setDeleteUuid] = useState<string | null>(null)
+  const [editSquad, setEditSquad] = useState<InternalSquad | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editInbounds, setEditInbounds] = useState<string[]>([])
 
   const { data: squads = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['squads-internal'],
     queryFn: squadsApi.listInternal,
   })
 
+  const { data: allInbounds = [] } = useQuery({
+    queryKey: ['squads-inbounds'],
+    queryFn: squadsApi.listInbounds,
+  })
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['squads-internal'] })
+    qc.invalidateQueries({ queryKey: ['internal-squads'] })
+  }
+
   const createMut = useMutation({
-    mutationFn: () => squadsApi.createInternal(newName.trim()),
+    mutationFn: () => squadsApi.createInternal(newName.trim(), newInbounds),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['squads-internal'] })
-      qc.invalidateQueries({ queryKey: ['internal-squads'] })
+      invalidate()
       setCreateOpen(false)
       setNewName('')
-      toast.success(t('squads.created', { defaultValue: 'Squad created' }))
+      setNewInbounds([])
+      toast.success(t('squads.created'))
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+
+  const updateMut = useMutation({
+    mutationFn: () => squadsApi.updateInternal(editSquad!.uuid, { name: editName.trim(), inbounds: editInbounds }),
+    onSuccess: () => {
+      invalidate()
+      setEditSquad(null)
+      toast.success(t('squads.updated', { defaultValue: 'Squad updated' }))
     },
     onError: () => toast.error(t('common.error')),
   })
@@ -51,13 +78,22 @@ function InternalSquadsTab() {
   const deleteMut = useMutation({
     mutationFn: (uuid: string) => squadsApi.deleteInternal(uuid),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['squads-internal'] })
-      qc.invalidateQueries({ queryKey: ['internal-squads'] })
+      invalidate()
       setDeleteUuid(null)
-      toast.success(t('squads.deleted', { defaultValue: 'Squad deleted' }))
+      toast.success(t('squads.deleted'))
     },
     onError: () => toast.error(t('common.error')),
   })
+
+  const openEdit = (sq: InternalSquad) => {
+    setEditSquad(sq)
+    setEditName(sq.name)
+    setEditInbounds(sq.inbounds?.map((ib) => ib.uuid) || [])
+  }
+
+  const toggleInbound = (uuid: string, list: string[], setList: (v: string[]) => void) => {
+    setList(list.includes(uuid) ? list.filter((id) => id !== uuid) : [...list, uuid])
+  }
 
   if (isLoading) return <Skeleton className="h-64 w-full" />
   if (isError) return <QueryError onRetry={refetch} />
@@ -68,14 +104,14 @@ function InternalSquadsTab() {
         <div className="flex justify-end">
           <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
             <Plus className="w-4 h-4" />
-            {t('squads.createInternal', { defaultValue: 'Create Internal Squad' })}
+            {t('squads.createInternal')}
           </Button>
         </div>
       )}
 
       {!squads.length ? (
         <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">
-          {t('squads.noInternal', { defaultValue: 'No internal squads' })}
+          {t('squads.noInternal')}
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -87,16 +123,28 @@ function InternalSquadsTab() {
                     <UsersRound className="w-4 h-4 text-primary-400 shrink-0" />
                     <span className="font-medium text-white truncate">{sq.name}</span>
                   </div>
-                  {canDelete && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-red-400"
-                      onClick={() => setDeleteUuid(sq.uuid)}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-primary-400"
+                        onClick={() => openEdit(sq)}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-red-400"
+                        onClick={() => setDeleteUuid(sq.uuid)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <div className="flex gap-3 mt-2 text-xs text-muted-foreground">
                   {sq.info && (
@@ -128,17 +176,41 @@ function InternalSquadsTab() {
       )}
 
       {/* Create dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
+      <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) { setNewName(''); setNewInbounds([]) } }}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{t('squads.createInternal', { defaultValue: 'Create Internal Squad' })}</DialogTitle>
+            <DialogTitle>{t('squads.createInternal')}</DialogTitle>
           </DialogHeader>
-          <Input
-            placeholder={t('squads.name', { defaultValue: 'Squad name' })}
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            maxLength={30}
-          />
+          <div className="space-y-4">
+            <Input
+              placeholder={t('squads.name')}
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              maxLength={30}
+            />
+            {allInbounds.length > 0 && (
+              <div>
+                <Label className="text-sm text-muted-foreground mb-2 block">
+                  Inbounds
+                </Label>
+                <div className="max-h-48 overflow-y-auto space-y-1.5">
+                  {allInbounds.map((ib) => (
+                    <label
+                      key={ib.uuid}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--glass-bg)] cursor-pointer"
+                    >
+                      <Checkbox
+                        checked={newInbounds.includes(ib.uuid)}
+                        onCheckedChange={() => toggleInbound(ib.uuid, newInbounds, setNewInbounds)}
+                      />
+                      <span className="text-sm text-white">{ib.tag}</span>
+                      <span className="text-[10px] text-muted-foreground ml-auto">{ib.type}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>{t('common.cancel')}</Button>
             <Button
@@ -151,13 +223,61 @@ function InternalSquadsTab() {
         </DialogContent>
       </Dialog>
 
+      {/* Edit dialog */}
+      <Dialog open={!!editSquad} onOpenChange={(open) => !open && setEditSquad(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('squads.editInternal', { defaultValue: 'Edit Internal Squad' })}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              placeholder={t('squads.name')}
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              maxLength={30}
+            />
+            {allInbounds.length > 0 && (
+              <div>
+                <Label className="text-sm text-muted-foreground mb-2 block">
+                  Inbounds
+                </Label>
+                <div className="max-h-48 overflow-y-auto space-y-1.5">
+                  {allInbounds.map((ib) => (
+                    <label
+                      key={ib.uuid}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--glass-bg)] cursor-pointer"
+                    >
+                      <Checkbox
+                        checked={editInbounds.includes(ib.uuid)}
+                        onCheckedChange={() => toggleInbound(ib.uuid, editInbounds, setEditInbounds)}
+                      />
+                      <span className="text-sm text-white">{ib.tag}</span>
+                      <span className="text-[10px] text-muted-foreground ml-auto">{ib.type}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditSquad(null)}>{t('common.cancel')}</Button>
+            <Button
+              onClick={() => updateMut.mutate()}
+              disabled={!editName.trim() || updateMut.isPending}
+            >
+              {t('common.save', { defaultValue: 'Save' })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete confirm */}
       <ConfirmDialog
         open={!!deleteUuid}
         onOpenChange={(open) => !open && setDeleteUuid(null)}
         onConfirm={() => deleteUuid && deleteMut.mutate(deleteUuid)}
-        title={t('squads.deleteConfirm', { defaultValue: 'Delete squad?' })}
-        description={t('squads.deleteDescription', { defaultValue: 'This will remove the squad. Users will be unassigned.' })}
+        title={t('squads.deleteConfirm')}
+        description={t('squads.deleteDescription')}
         variant="destructive"
       />
     </div>
@@ -169,25 +289,42 @@ function ExternalSquadsTab() {
   const qc = useQueryClient()
   const hasPermission = usePermissionStore((s) => s.hasPermission)
   const canCreate = hasPermission('users', 'create')
+  const canEdit = hasPermission('users', 'edit')
   const canDelete = hasPermission('users', 'delete')
 
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
   const [deleteUuid, setDeleteUuid] = useState<string | null>(null)
+  const [editSquad, setEditSquad] = useState<ExternalSquad | null>(null)
+  const [editName, setEditName] = useState('')
 
   const { data: squads = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['squads-external'],
     queryFn: squadsApi.listExternal,
   })
 
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['squads-external'] })
+    qc.invalidateQueries({ queryKey: ['external-squads'] })
+  }
+
   const createMut = useMutation({
     mutationFn: () => squadsApi.createExternal(newName.trim()),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['squads-external'] })
-      qc.invalidateQueries({ queryKey: ['external-squads'] })
+      invalidate()
       setCreateOpen(false)
       setNewName('')
-      toast.success(t('squads.created', { defaultValue: 'Squad created' }))
+      toast.success(t('squads.created'))
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+
+  const updateMut = useMutation({
+    mutationFn: () => squadsApi.updateExternal(editSquad!.uuid, { name: editName.trim() }),
+    onSuccess: () => {
+      invalidate()
+      setEditSquad(null)
+      toast.success(t('squads.updated', { defaultValue: 'Squad updated' }))
     },
     onError: () => toast.error(t('common.error')),
   })
@@ -195,13 +332,17 @@ function ExternalSquadsTab() {
   const deleteMut = useMutation({
     mutationFn: (uuid: string) => squadsApi.deleteExternal(uuid),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['squads-external'] })
-      qc.invalidateQueries({ queryKey: ['external-squads'] })
+      invalidate()
       setDeleteUuid(null)
-      toast.success(t('squads.deleted', { defaultValue: 'Squad deleted' }))
+      toast.success(t('squads.deleted'))
     },
     onError: () => toast.error(t('common.error')),
   })
+
+  const openEdit = (sq: ExternalSquad) => {
+    setEditSquad(sq)
+    setEditName(sq.name)
+  }
 
   if (isLoading) return <Skeleton className="h-64 w-full" />
   if (isError) return <QueryError onRetry={refetch} />
@@ -212,14 +353,14 @@ function ExternalSquadsTab() {
         <div className="flex justify-end">
           <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
             <Plus className="w-4 h-4" />
-            {t('squads.createExternal', { defaultValue: 'Create External Squad' })}
+            {t('squads.createExternal')}
           </Button>
         </div>
       )}
 
       {!squads.length ? (
         <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">
-          {t('squads.noExternal', { defaultValue: 'No external squads' })}
+          {t('squads.noExternal')}
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -231,22 +372,34 @@ function ExternalSquadsTab() {
                     <Globe className="w-4 h-4 text-cyan-400 shrink-0" />
                     <span className="font-medium text-white truncate">{sq.name}</span>
                   </div>
-                  {canDelete && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-red-400"
-                      onClick={() => setDeleteUuid(sq.uuid)}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-primary-400"
+                        onClick={() => openEdit(sq)}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-red-400"
+                        onClick={() => setDeleteUuid(sq.uuid)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 {sq.info && (
                   <div className="flex gap-3 mt-2 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <UsersRound className="w-3 h-3" />
-                      {sq.info.membersCount} {t('squads.members', { defaultValue: 'members' })}
+                      {sq.info.membersCount} {t('squads.members')}
                     </span>
                   </div>
                 )}
@@ -256,13 +409,14 @@ function ExternalSquadsTab() {
         </div>
       )}
 
+      {/* Create dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('squads.createExternal', { defaultValue: 'Create External Squad' })}</DialogTitle>
+            <DialogTitle>{t('squads.createExternal')}</DialogTitle>
           </DialogHeader>
           <Input
-            placeholder={t('squads.name', { defaultValue: 'Squad name' })}
+            placeholder={t('squads.name')}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             maxLength={30}
@@ -279,12 +433,37 @@ function ExternalSquadsTab() {
         </DialogContent>
       </Dialog>
 
+      {/* Edit dialog */}
+      <Dialog open={!!editSquad} onOpenChange={(open) => !open && setEditSquad(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('squads.editExternal', { defaultValue: 'Edit External Squad' })}</DialogTitle>
+          </DialogHeader>
+          <Input
+            placeholder={t('squads.name')}
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            maxLength={30}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditSquad(null)}>{t('common.cancel')}</Button>
+            <Button
+              onClick={() => updateMut.mutate()}
+              disabled={!editName.trim() || updateMut.isPending}
+            >
+              {t('common.save', { defaultValue: 'Save' })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirm */}
       <ConfirmDialog
         open={!!deleteUuid}
         onOpenChange={(open) => !open && setDeleteUuid(null)}
         onConfirm={() => deleteUuid && deleteMut.mutate(deleteUuid)}
-        title={t('squads.deleteConfirm', { defaultValue: 'Delete squad?' })}
-        description={t('squads.deleteDescription', { defaultValue: 'This will remove the squad. Users will be unassigned.' })}
+        title={t('squads.deleteConfirm')}
+        description={t('squads.deleteDescription')}
         variant="destructive"
       />
     </div>
@@ -307,9 +486,9 @@ export default function Squads() {
   return (
     <div className="p-4 md:p-6 space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-2xl font-bold text-white">{t('squads.title', { defaultValue: 'Squads' })}</h1>
+        <h1 className="text-2xl font-bold text-white">{t('squads.title')}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {t('squads.subtitle', { defaultValue: 'Manage internal and external squads for user grouping' })}
+          {t('squads.subtitle')}
         </p>
       </div>
 
@@ -317,11 +496,11 @@ export default function Squads() {
         <TabsList>
           <TabsTrigger value="internal" className="gap-1.5">
             <UsersRound className="w-4 h-4" />
-            {t('squads.internal', { defaultValue: 'Internal' })}
+            {t('squads.internal')}
           </TabsTrigger>
           <TabsTrigger value="external" className="gap-1.5">
             <Globe className="w-4 h-4" />
-            {t('squads.external', { defaultValue: 'External' })}
+            {t('squads.external')}
           </TabsTrigger>
         </TabsList>
 

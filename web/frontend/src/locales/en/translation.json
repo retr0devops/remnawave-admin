@@ -3109,7 +3109,10 @@
     "noExternal": "No external squads",
     "name": "Squad name",
     "created": "Squad created",
+    "updated": "Squad updated",
     "deleted": "Squad deleted",
+    "editInternal": "Edit Internal Squad",
+    "editExternal": "Edit External Squad",
     "deleteConfirm": "Delete squad?",
     "deleteDescription": "This will remove the squad. Users will be unassigned.",
     "members": "members"

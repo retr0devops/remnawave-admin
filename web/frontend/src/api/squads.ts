@@ -49,8 +49,18 @@ export const squadsApi = {
     return data
   },
 
+  updateExternal: async (uuid: string, payload: { name?: string }): Promise<ExternalSquad> => {
+    const { data } = await client.patch(`/squads/external/${uuid}`, payload)
+    return data
+  },
+
   deleteExternal: async (uuid: string): Promise<void> => {
     await client.delete(`/squads/external/${uuid}`)
+  },
+
+  listInbounds: async (): Promise<{ uuid: string; tag: string; type: string }[]> => {
+    const { data } = await client.get('/squads/inbounds')
+    return Array.isArray(data) ? data : []
   },
 }
 
