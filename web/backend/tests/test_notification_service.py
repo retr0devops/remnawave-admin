@@ -13,26 +13,30 @@ from web.backend.core.notification_service import (
 class TestGetGlobalTelegramConfig:
     """Tests for _get_global_telegram_config."""
 
+    @patch("shared.config_service.config_service")
     @patch("web.backend.core.config.get_web_settings")
-    def test_returns_config_tuple(self, mock_settings):
+    def test_returns_config_tuple(self, mock_settings, mock_cs):
         s = MagicMock()
         s.telegram_bot_token = "123:ABC"
         s.notifications_chat_id = "12345"
         s.get_topic_for = MagicMock(return_value=99)
         mock_settings.return_value = s
+        mock_cs.get = MagicMock(return_value=None)
 
         bot_token, chat_id, topic_id = _get_global_telegram_config("service")
         assert bot_token == "123:ABC"
         assert chat_id == "12345"
-        assert topic_id == 99
+        assert topic_id == "99"
 
+    @patch("shared.config_service.config_service")
     @patch("web.backend.core.config.get_web_settings")
-    def test_no_chat_id(self, mock_settings):
+    def test_no_chat_id(self, mock_settings, mock_cs):
         s = MagicMock()
         s.telegram_bot_token = "123:ABC"
         s.notifications_chat_id = None
         s.get_topic_for = MagicMock(return_value=None)
         mock_settings.return_value = s
+        mock_cs.get = MagicMock(return_value=None)
 
         bot_token, chat_id, topic_id = _get_global_telegram_config()
         assert chat_id is None
