@@ -408,11 +408,13 @@ async def create_notification(
         # Use telegram_body for Telegram channels if provided, otherwise fall back to body
         tg_body = telegram_body or body
 
+        # Collect per-admin Telegram chat_ids to avoid duplicate global send
+        per_admin_tg_chat_ids: set = set()
+
         # Dispatch to external channels (per-admin configured channels)
         if admin_id is not None:
+            per_admin_tg_chat_ids = await _collect_telegram_chat_ids(admin_id)
             asyncio.create_task(_dispatch_external(admin_id, title, tg_body, severity, link, channels))
-            # We can't easily track what was dispatched in the async task,
-            # but we still send to global fallback below for broadcast safety
         else:
             # For broadcasts, dispatch to all admins' external channels
             try:
@@ -422,6 +424,8 @@ async def create_notification(
                 if admin_ids_rows:
                     logger.debug("Broadcasting external channels to %d admin accounts", len(admin_ids_rows))
                     for row in admin_ids_rows:
+                        aid_chat_ids = await _collect_telegram_chat_ids(row["id"])
+                        per_admin_tg_chat_ids.update(aid_chat_ids)
                         asyncio.create_task(
                             _dispatch_external(row["id"], title, tg_body, severity, link, channels)
                         )
@@ -430,20 +434,46 @@ async def create_notification(
             except Exception as e:
                 logger.error("Failed to dispatch to admin channels: %s", e, exc_info=True)
 
-        # Global channel fallback: send to NOTIFICATIONS_CHAT_ID for Telegram
-        # This ensures alerts reach the configured Telegram chat even if
-        # no per-admin Telegram channel is set up.
-        # topic_type routes the message to the correct Telegram topic
-        # (e.g. "nodes" → NOTIFICATIONS_TOPIC_NODES)
+        # Global channel fallback: send to NOTIFICATIONS_CHAT_ID for Telegram.
+        # Skip if a per-admin channel already covers the same chat_id
+        # to prevent duplicate messages.
         if "telegram" in channels or "all" in channels:
-            asyncio.create_task(
-                _send_to_global_telegram(title, tg_body, severity, topic_type)
-            )
+            _, global_chat_id, _ = _get_global_telegram_config(topic_type)
+            if global_chat_id and global_chat_id not in per_admin_tg_chat_ids:
+                asyncio.create_task(
+                    _send_to_global_telegram(title, tg_body, severity, topic_type)
+                )
+            elif not global_chat_id:
+                logger.debug("No global NOTIFICATIONS_CHAT_ID, skipping global Telegram")
+            else:
+                logger.debug("Global chat_id=%s already covered by per-admin channel, skipping duplicate", global_chat_id)
 
     except Exception as e:
         logger.error("Failed to create notification: %s", e, exc_info=True)
 
     return notification_id
+
+
+async def _collect_telegram_chat_ids(admin_id: int) -> set:
+    """Return the set of Telegram chat_ids configured for this admin."""
+    try:
+        from shared.database import db_service
+        async with db_service.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT config FROM notification_channels "
+                "WHERE admin_id = $1 AND channel_type = 'telegram' AND is_enabled = true",
+                admin_id,
+            )
+        chat_ids = set()
+        for row in rows:
+            config = row["config"] if isinstance(row["config"], dict) else json.loads(row["config"] or "{}")
+            cid = config.get("chat_id")
+            if cid:
+                chat_ids.add(str(cid))
+        return chat_ids
+    except Exception as e:
+        logger.debug("Failed to collect telegram chat_ids for admin %s: %s", admin_id, e)
+        return set()
 
 
 async def _send_to_global_telegram(title: str, body: str, severity: str, topic_type: str = "service"):
