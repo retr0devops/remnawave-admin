@@ -73,6 +73,8 @@ const TOPICS = ['node_status', 'user_update', 'violation', 'connection', 'hwid_u
 
 // Close code 4001 = auth failure from backend
 const AUTH_FAILURE_CODE = 4001
+// Stop reconnecting after this many consecutive auth failures
+const MAX_AUTH_FAILURES = 3
 
 export function useRealtimeUpdates() {
   const queryClient = useQueryClient()
@@ -82,6 +84,7 @@ export function useRealtimeUpdates() {
 
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectAttempt = useRef(0)
+  const authFailureCount = useRef(0)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>()
   const isMounted = useRef(true)
   const isRefreshing = useRef(false)
@@ -241,6 +244,7 @@ export function useRealtimeUpdates() {
 
     ws.onopen = () => {
       reconnectAttempt.current = 0
+      authFailureCount.current = 0
       // Subscribe to topics
       ws.send(JSON.stringify({ type: 'subscribe', topics: TOPICS }))
     }
@@ -252,6 +256,12 @@ export function useRealtimeUpdates() {
 
       // Auth failure — try to refresh token before reconnecting
       if (event.code === AUTH_FAILURE_CODE) {
+        authFailureCount.current++
+        if (authFailureCount.current > MAX_AUTH_FAILURES) {
+          // Too many consecutive auth failures — stop reconnecting and logout
+          logout()
+          return
+        }
         tryRefreshToken().then((newToken) => {
           if (newToken && isMounted.current) {
             // Got a new token, reconnect immediately

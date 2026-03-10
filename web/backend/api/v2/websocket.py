@@ -88,7 +88,7 @@ async def websocket_endpoint(
     try:
         admin = await get_current_admin_ws(websocket, token)
     except Exception as e:
-        logger.warning(f"WebSocket auth failed: {e}")
+        logger.debug("WebSocket auth failed: %s", e)
         return
 
     await manager.connect(websocket, admin)
