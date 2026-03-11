@@ -123,6 +123,17 @@ if $COMPOSE_CMD ps -q 2>/dev/null | grep -q .; then
     $COMPOSE_CMD down 2>/dev/null || true
 fi
 
+# Check Docker iptables chains
+if command -v iptables &>/dev/null; then
+    if ! iptables -L DOCKER-FORWARD &>/dev/null 2>&1; then
+        warn "Docker iptables chains are missing. Restarting Docker..."
+        modprobe overlay 2>/dev/null || true
+        modprobe br_netfilter 2>/dev/null || true
+        systemctl restart docker
+        sleep 2
+    fi
+fi
+
 # Pull and start
 log "Starting agent..."
 $COMPOSE_CMD pull --quiet
