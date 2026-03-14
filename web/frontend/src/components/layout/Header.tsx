@@ -99,11 +99,11 @@ export default function Header({ onMenuToggle, onSearchClick }: HeaderProps) {
         {/* Search trigger — opens Command Palette */}
         <button
           onClick={onSearchClick}
-          className="header-search-bar flex-1 max-w-md hidden sm:flex items-center gap-2 h-10 rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] backdrop-blur-sm px-3 text-sm text-dark-300 hover:border-[var(--glass-border-hover)] hover:text-dark-200 transition-colors cursor-pointer"
+          className="header-search-bar flex-1 max-w-md hidden sm:flex items-center gap-2 h-10 rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] backdrop-blur-sm px-3 text-sm text-muted-foreground hover:border-[var(--glass-border-hover)] hover:text-foreground transition-colors cursor-pointer"
         >
           <Search className="w-4 h-4 flex-shrink-0" />
           <span className="flex-1 text-left">{t('header.searchPlaceholder')}</span>
-          <kbd className="hidden lg:inline-flex h-5 select-none items-center gap-1 rounded border border-[var(--glass-border)] bg-[var(--glass-bg)] px-1.5 font-mono text-[10px] font-medium text-dark-300">
+          <kbd className="hidden lg:inline-flex h-5 select-none items-center gap-1 rounded border border-[var(--glass-border)] bg-[var(--glass-bg)] px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
             <span className="text-xs">&#x2318;</span>K
           </kbd>
         </button>
@@ -156,7 +156,7 @@ export default function Header({ onMenuToggle, onSearchClick }: HeaderProps) {
             <div className="absolute right-0 top-full mt-2 w-96 max-w-[calc(100vw-2rem)] bg-[var(--glass-bg-solid)] backdrop-blur-[var(--glass-blur-heavy)] border border-[var(--glass-border)] rounded-xl shadow-2xl z-50 animate-fade-in overflow-hidden">
               {/* Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--glass-border)]">
-                <h3 className="text-sm font-semibold text-white">{t('notifications.title')}</h3>
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>{t('notifications.title')}</h3>
                 <div className="flex items-center gap-2">
                   {unreadCount > 0 && (
                     <button
@@ -173,7 +173,7 @@ export default function Header({ onMenuToggle, onSearchClick }: HeaderProps) {
               {/* Notification list */}
               <ScrollArea className="max-h-[400px]">
                 {notifications.length === 0 ? (
-                  <div className="py-12 text-center text-dark-300 text-sm">
+                  <div className="py-12 text-center text-muted-foreground text-sm">
                     <Bell className="w-8 h-8 mx-auto mb-2 opacity-30" />
                     {t('notifications.noNotifications')}
                   </div>
@@ -195,14 +195,14 @@ export default function Header({ onMenuToggle, onSearchClick }: HeaderProps) {
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <p className={cn('text-sm truncate', n.is_read ? 'text-dark-200' : 'text-white font-medium')}>
+                            <p className={cn('text-sm truncate', n.is_read ? 'text-muted-foreground' : 'font-medium')} style={{ color: n.is_read ? undefined : 'var(--text-heading)' }}>
                               {n.title}
                             </p>
                             {n.body && (
-                              <p className="text-xs text-dark-300 mt-0.5 line-clamp-2">{n.body}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.body}</p>
                             )}
                           </div>
-                          <span className="text-[10px] text-dark-400 whitespace-nowrap mt-0.5">
+                          <span className="text-[10px] text-muted-foreground/70 whitespace-nowrap mt-0.5">
                             {timeAgo(n.created_at, t)}
                           </span>
                         </div>
