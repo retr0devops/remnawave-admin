@@ -149,6 +149,12 @@ const TrafficBar = memo(function TrafficBar({ used, limit }: { used: number; lim
           style={{ width: `${percent}%` }}
         />
       )}
+      {/* Shimmer effect when near limit */}
+      {!isUnlimited && percent >= 90 && (
+        <div className="absolute inset-0 overflow-hidden rounded-full">
+          <div className="absolute inset-0 animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-red-400/15 to-transparent" />
+        </div>
+      )}
       <div className="absolute inset-0 flex items-center justify-center">
         <span className={`text-[11px] font-medium drop-shadow-sm ${textClass}`}>
           {formatBytes(used)} / {isUnlimited ? '\u221E' : formatBytes(limit)}
@@ -176,7 +182,11 @@ const OnlineIndicator = memo(function OnlineIndicator({ onlineAt }: { onlineAt: 
 
   return (
     <div className="flex items-center gap-1.5">
-      <span className={`w-1.5 h-1.5 rounded-full ${dotColor} flex-shrink-0`} />
+      <span className={cn(
+        'w-1.5 h-1.5 rounded-full flex-shrink-0',
+        dotColor,
+        diffHours < 1 && 'animate-pulse shadow-[0_0_4px_rgba(34,197,94,0.6)]'
+      )} />
       <span className="text-dark-200 text-xs">{formatTimeAgo(onlineAt)}</span>
     </div>
   )
@@ -289,9 +299,22 @@ const MobileUserCard = memo(function MobileUserCard({
   const { formatDateShort } = useFormatters()
   return (
     <Card
-      className="cursor-pointer active:bg-[var(--glass-bg)]"
+      className="cursor-pointer active:bg-[var(--glass-bg)] relative group transition-all duration-300 hover:-translate-y-0.5"
       onClick={onNavigate}
     >
+      {/* Status color bar */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg transition-all duration-300 group-hover:w-[4px]"
+        style={{
+          background: user.status === 'active'
+            ? 'linear-gradient(180deg, #22c55e 0%, rgba(34,197,94,0.3) 100%)'
+            : user.status === 'disabled'
+              ? 'linear-gradient(180deg, #ef4444 0%, rgba(239,68,68,0.3) 100%)'
+              : user.status === 'limited'
+                ? 'linear-gradient(180deg, #eab308 0%, rgba(234,179,8,0.3) 100%)'
+                : 'linear-gradient(180deg, #6b7280 0%, rgba(107,114,128,0.3) 100%)',
+        }}
+      />
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3">
           <div className="min-w-0 flex-1">

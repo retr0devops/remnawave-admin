@@ -601,7 +601,24 @@ function NodeCard({
       : t('nodes.status.offline')
 
   return (
-    <Card className={cn('relative', node.is_disabled && 'opacity-60')}>
+    <Card className={cn(
+      'relative group transition-all duration-300',
+      node.is_disabled && 'opacity-60',
+      isOnline
+        ? 'hover:-translate-y-0.5 hover:shadow-[0_0_20px_-6px_rgba(34,197,94,0.2)]'
+        : !node.is_disabled && 'hover:shadow-[0_0_20px_-6px_rgba(239,68,68,0.15)]'
+    )}>
+      {/* Status color bar */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg transition-all duration-300 group-hover:w-[4px]"
+        style={{
+          background: isOnline
+            ? 'linear-gradient(180deg, #22c55e 0%, rgba(34,197,94,0.3) 100%)'
+            : node.is_disabled
+              ? 'linear-gradient(180deg, #6b7280 0%, rgba(107,114,128,0.3) 100%)'
+              : 'linear-gradient(180deg, #ef4444 0%, rgba(239,68,68,0.3) 100%)',
+        }}
+      />
       <CardHeader className="pb-0">
         {/* Header */}
         <div className="flex items-start justify-between">

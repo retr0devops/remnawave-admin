@@ -1,4 +1,4 @@
-import { useState, useMemo, memo, Fragment } from 'react'
+import { useState, useMemo, useEffect, useRef, memo, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -283,72 +283,146 @@ function formatTimestamp(ts: string): string {
 
 // ── StatCard ─────────────────────────────────────────────────────
 
+const STAT_COLORS = {
+  cyan:   { rgb: '6, 182, 212',   text: 'text-cyan-400',   hoverText: 'group-hover:text-cyan-400',   bar: '#06b6d4' },
+  green:  { rgb: '34, 197, 94',   text: 'text-emerald-400', hoverText: 'group-hover:text-emerald-400', bar: '#22c55e' },
+  yellow: { rgb: '234, 179, 8',   text: 'text-amber-400',  hoverText: 'group-hover:text-amber-400',  bar: '#eab308' },
+  red:    { rgb: '239, 68, 68',   text: 'text-red-400',    hoverText: 'group-hover:text-red-400',    bar: '#ef4444' },
+  violet: { rgb: '139, 92, 246',  text: 'text-violet-400', hoverText: 'group-hover:text-violet-400', bar: '#8b5cf6' },
+  pink:   { rgb: '236, 72, 153',  text: 'text-pink-400',   hoverText: 'group-hover:text-pink-400',   bar: '#ec4899' },
+} as const
+
 interface StatCardProps {
   title: string
   value: string | number
   icon: React.ElementType
-  color: 'cyan' | 'green' | 'yellow' | 'red' | 'violet'
+  color: keyof typeof STAT_COLORS
   subtitle?: string
   onClick?: () => void
   loading?: boolean
   index?: number
 }
 
+/** Animate a numeric value from 0 → target over ~800ms */
+function useCountUp(target: string | number, loading?: boolean): string {
+  const [display, setDisplay] = useState('0')
+  const rafRef = useRef<number>(0)
+
+  useEffect(() => {
+    if (loading) return
+
+    const str = String(target)
+    // Extract leading numeric part (e.g. "1,234" → 1234, "3/5" → 3)
+    const cleaned = str.replace(/,/g, '')
+    const num = parseFloat(cleaned)
+    if (!isFinite(num) || num === 0 || str === '-') {
+      setDisplay(str)
+      return
+    }
+
+    const isInt = Number.isInteger(num) && !cleaned.includes('.')
+    const suffix = cleaned.length < str.length ? str.slice(cleaned.indexOf(String(num)) + String(num).length) : ''
+    // For values like "3/5" just show immediately
+    if (/[/]/.test(str)) {
+      setDisplay(str)
+      return
+    }
+
+    const duration = 800
+    const start = performance.now()
+
+    const tick = (now: number) => {
+      const elapsed = now - start
+      const progress = Math.min(elapsed / duration, 1)
+      // ease-out cubic
+      const eased = 1 - Math.pow(1 - progress, 3)
+      const current = eased * num
+
+      if (isInt) {
+        setDisplay(Math.round(current).toLocaleString() + suffix)
+      } else {
+        setDisplay(current.toFixed(1) + suffix)
+      }
+
+      if (progress < 1) {
+        rafRef.current = requestAnimationFrame(tick)
+      } else {
+        setDisplay(str)
+      }
+    }
+
+    rafRef.current = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [target, loading])
+
+  return display
+}
+
 const StatCard = memo(function StatCard({
   title, value, icon: Icon, color, subtitle, onClick, loading, index = 0,
 }: StatCardProps) {
   const { t } = useTranslation()
-  // Mono-accent: all stat card icons use the theme accent color via CSS variables
-  const accentStyle = {
-    bg: 'rgba(var(--glow-rgb), 0.15)',
-    text: 'text-primary-400',
-    border: 'rgba(var(--glow-rgb), 0.3)',
-  }
-  const colorConfig = {
-    cyan: accentStyle,
-    green: accentStyle,
-    yellow: accentStyle,
-    red: accentStyle,
-    violet: accentStyle,
-  }
-
-  const cfg = colorConfig[color]
+  const cfg = STAT_COLORS[color]
+  const animatedValue = useCountUp(value, loading)
 
   return (
     <Card
       className={cn(
-        "animate-fade-in-up group relative overflow-hidden",
-        onClick && "cursor-pointer hover:shadow-[0_0_24px_-6px_rgba(var(--glow-rgb),0.25)] transition-all duration-300"
+        "animate-fade-in-up group relative overflow-hidden transition-all duration-300",
+        onClick && "cursor-pointer hover:-translate-y-0.5"
       )}
       onClick={onClick}
-      style={{ animationDelay: `${index * 0.05}s` }}
+      style={{
+        animationDelay: `${index * 0.05}s`,
+        '--stat-rgb': cfg.rgb,
+      } as React.CSSProperties}
     >
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[rgba(var(--glow-rgb),0.4)] to-transparent" />
-      <CardContent className="px-4 py-3">
+      {/* Left color bar */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg transition-all duration-300 group-hover:w-[4px]"
+        style={{
+          background: `linear-gradient(180deg, ${cfg.bar} 0%, rgba(${cfg.rgb}, 0.3) 100%)`,
+          boxShadow: `0 0 8px rgba(${cfg.rgb}, 0.15)`,
+        }}
+      />
+      {/* Top glow line on hover */}
+      <div
+        className="absolute inset-x-0 top-0 h-px opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+        style={{ background: `linear-gradient(90deg, transparent, rgba(${cfg.rgb}, 0.5), transparent)` }}
+      />
+      {/* Hover glow shadow */}
+      <div
+        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none rounded-lg"
+        style={{ boxShadow: `inset 0 0 30px -12px rgba(${cfg.rgb}, 0.1), 0 0 20px -8px rgba(${cfg.rgb}, 0.15)` }}
+      />
+      <CardContent className="px-4 py-3 relative">
         <div className="flex items-center justify-between">
           <div className="min-w-0 flex-1">
             <p className="text-xs text-muted-foreground">{title}</p>
             {loading ? (
               <Skeleton className="h-7 w-16 mt-1" />
             ) : (
-              <p className="text-lg md:text-xl font-bold text-white mt-0.5">{value}</p>
+              <p className="text-lg md:text-xl font-bold text-white mt-0.5">{animatedValue}</p>
             )}
             {subtitle && (
               <p className="text-[11px] text-muted-foreground mt-0.5">{subtitle}</p>
             )}
           </div>
           <div
-            className="p-2 rounded-lg shrink-0 backdrop-blur-sm"
+            className="p-2 rounded-lg shrink-0 backdrop-blur-sm transition-all duration-300 group-hover:scale-110"
             style={{
-              background: cfg.bg,
-              border: `1px solid ${cfg.border}`,
+              background: `rgba(${cfg.rgb}, 0.12)`,
+              border: `1px solid rgba(${cfg.rgb}, 0.25)`,
             }}
           >
-            <Icon className={cn("w-5 h-5", cfg.text)} />
+            <Icon className={cn("w-5 h-5 transition-colors duration-300", cfg.text)} />
           </div>
         </div>
         {onClick && (
-          <span className="text-[11px] text-muted-foreground group-hover:text-primary-400 flex items-center gap-1 transition-colors duration-200 mt-2">
+          <span className={cn(
+            "text-[11px] text-muted-foreground flex items-center gap-1 transition-colors duration-200 mt-2",
+            cfg.hoverText,
+          )}>
             {t('dashboard.details')} <ExternalLink className="w-3 h-3" />
           </span>
         )}
@@ -1743,7 +1817,7 @@ export default function Dashboard() {
             title={t('dashboard.activeNodes')}
             value={overview ? `${overview.online_nodes}/${overview.total_nodes}` : '-'}
             icon={Server}
-            color="green"
+            color="violet"
             subtitle={overview ? t('dashboard.nodesSubtitle', { offline: overview.offline_nodes, disabled: overview.disabled_nodes, online: overview.users_online || 0 }) : undefined}
             onClick={() => navigate('/nodes')}
             loading={overviewLoading && canViewAnalytics}
@@ -1767,7 +1841,7 @@ export default function Dashboard() {
             title={t('dashboard.traffic')}
             value={overview ? formatBytes(overview.total_traffic_bytes) : trafficStats ? formatBytes(trafficStats.total_bytes) : '-'}
             icon={TrendingUp}
-            color="cyan"
+            color="pink"
             subtitle={trafficStats ? `${t('dashboard.trafficDay')}: ${formatBytes(trafficStats.today_bytes)} | ${t('dashboard.trafficWeek')}: ${formatBytes(trafficStats.week_bytes)} | ${t('dashboard.trafficMonth')}: ${formatBytes(trafficStats.month_bytes)}` : undefined}
             loading={overviewLoading && trafficLoading}
             index={4}

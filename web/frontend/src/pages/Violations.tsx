@@ -219,13 +219,6 @@ function getScoreColor(score: number): string {
   return 'text-green-400'
 }
 
-function getScoreBg(score: number): string {
-  if (score >= 80) return 'bg-red-500/20'
-  if (score >= 60) return 'bg-yellow-500/20'
-  if (score >= 40) return 'bg-blue-500/20'
-  return 'bg-green-500/20'
-}
-
 function getConnectionTypeLabelKey(type: string | null): string | null {
   if (!type) return null
   const keys: Record<string, string> = {
@@ -282,13 +275,46 @@ const ScoreBar = memo(function ScoreBar({ label, score, weight, icon }: { label:
 // ── Score circle component ───────────────────────────────────────
 
 const ScoreCircle = memo(function ScoreCircle({ score, size = 'md' }: { score: number; size?: 'sm' | 'md' | 'lg' }) {
-  const sizeMap = { sm: 'w-10 h-10', md: 'w-14 h-14', lg: 'w-20 h-20' }
-  const textMap = { sm: 'text-sm', md: 'text-xl', lg: 'text-3xl' }
+  const sizeMap = { sm: 40, md: 56, lg: 80 }
+  const cssSize = { sm: 'w-10 h-10', md: 'w-14 h-14', lg: 'w-20 h-20' }
+  const textMap = { sm: 'text-xs', md: 'text-lg', lg: 'text-2xl' }
+  const strokeMap = { sm: 3, md: 3.5, lg: 4 }
+
+  const px = sizeMap[size]
+  const stroke = strokeMap[size]
+  const radius = (px - stroke * 2) / 2
+  const circumference = 2 * Math.PI * radius
+  const progress = Math.min(score, 100) / 100
+
+  const strokeColor = score >= 80 ? '#ef4444' : score >= 60 ? '#eab308' : score >= 40 ? '#3b82f6' : '#22c55e'
+
   return (
-    <div
-      className={`${sizeMap[size]} rounded-full ${getScoreBg(score)} flex items-center justify-center flex-shrink-0`}
-    >
-      <span className={`font-bold ${getScoreColor(score)} ${textMap[size]}`}>{Math.round(score)}</span>
+    <div className={`${cssSize[size]} relative flex-shrink-0`}>
+      <svg width={px} height={px} className="-rotate-90">
+        {/* Background ring */}
+        <circle
+          cx={px / 2} cy={px / 2} r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={stroke}
+          className="text-white/5"
+        />
+        {/* Score ring */}
+        <circle
+          cx={px / 2} cy={px / 2} r={radius}
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - progress)}
+          className="transition-all duration-1000 ease-out"
+          style={{ filter: `drop-shadow(0 0 4px ${strokeColor}40)` }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className={`font-bold ${getScoreColor(score)} ${textMap[size]}`}>{Math.round(score)}</span>
+      </div>
     </div>
   )
 })
@@ -322,7 +348,23 @@ const ViolationCard = memo(function ViolationCard({
   const isPending = !violation.action_taken
 
   return (
-    <Card className="hover:border-[var(--glass-border)]/40 transition-colors">
+    <Card className={cn(
+      "hover:border-[var(--glass-border)]/40 transition-all duration-300 relative",
+      violation.severity === 'critical' && !violation.action_taken && "border-red-500/20 animate-[pulse_3s_ease-in-out_infinite]"
+    )}>
+      {/* Severity color bar */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg"
+        style={{
+          background: violation.severity === 'critical'
+            ? 'linear-gradient(180deg, #ef4444 0%, rgba(239,68,68,0.3) 100%)'
+            : violation.severity === 'high'
+              ? 'linear-gradient(180deg, #eab308 0%, rgba(234,179,8,0.3) 100%)'
+              : violation.severity === 'medium'
+                ? 'linear-gradient(180deg, #3b82f6 0%, rgba(59,130,246,0.3) 100%)'
+                : 'linear-gradient(180deg, #6b7280 0%, rgba(107,114,128,0.3) 100%)',
+        }}
+      />
       <CardContent className="p-4">
         <div className="flex items-start gap-3 md:gap-4">
           {/* Severity icon */}
@@ -2353,9 +2395,13 @@ export default function Violations() {
               violations.map((violation, i) => (
                 <div
                   key={violation.id}
-                  className="animate-fade-in-up"
+                  className="animate-fade-in-up relative"
                   style={{ animationDelay: `${i * 0.04}s` }}
                 >
+                  {/* Timeline connector */}
+                  {i < violations.length - 1 && (
+                    <div className="absolute left-5 top-full w-px h-3 bg-gradient-to-b from-[var(--glass-border)] to-transparent hidden sm:block" />
+                  )}
                   <ViolationCard
                     violation={violation}
                     canResolve={canResolve}
