@@ -2400,8 +2400,10 @@ class DatabaseService:
             return [dict(r) for r in rows]
 
     async def get_raw_traffic_sums(self) -> Dict[str, int]:
-        """Get sum of raw traffic (without multipliers) per user from user_node_traffic table.
+        """Get sum of raw traffic (without node multipliers) per user.
 
+        Divides each node's traffic by its consumptionMultiplier (from nodes.raw_data)
+        to get the actual bytes transferred before multiplication.
         Returns dict mapping user_uuid -> total raw traffic bytes.
         """
         if not self.is_connected:
@@ -2409,9 +2411,18 @@ class DatabaseService:
         async with self.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT user_uuid::text, SUM(traffic_bytes) as total_raw_bytes
-                FROM user_node_traffic
-                GROUP BY user_uuid
+                SELECT
+                    unt.user_uuid::text,
+                    SUM(
+                        CASE
+                            WHEN COALESCE((n.raw_data->>'consumptionMultiplier')::numeric, 1) > 0
+                            THEN unt.traffic_bytes / (n.raw_data->>'consumptionMultiplier')::numeric
+                            ELSE unt.traffic_bytes
+                        END
+                    )::bigint as total_raw_bytes
+                FROM user_node_traffic unt
+                JOIN nodes n ON unt.node_uuid = n.uuid
+                GROUP BY unt.user_uuid
                 """
             )
             return {r["user_uuid"]: int(r["total_raw_bytes"]) for r in rows}
