@@ -1517,6 +1517,11 @@ export default function Users() {
                     </td>
                     <td className="min-w-[140px]">
                       <TrafficBar used={user.used_traffic_bytes} limit={user.traffic_limit_bytes} />
+                      {user.raw_used_traffic_bytes != null && user.raw_used_traffic_bytes !== user.used_traffic_bytes && (
+                        <div className="text-[10px] text-dark-300 mt-0.5 text-center" title={t('users.table.rawTrafficHint')}>
+                          {t('users.table.rawTrafficPrefix')}{formatBytes(user.raw_used_traffic_bytes)}
+                        </div>
+                      )}
                     </td>
                     <td className="text-center">
                       <span className="text-dark-100 text-sm">{user.hwid_device_count} / {user.hwid_device_limit || '\u221E'}</span>
