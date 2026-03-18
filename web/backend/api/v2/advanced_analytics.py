@@ -62,7 +62,7 @@ async def _compute_geo(period: str = "7d", date_from: Optional[str] = None, date
         if date_from:
             since = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
         else:
-            delta_map = {"24h": 1, "7d": 7, "30d": 30}
+            delta_map = {"24h": 1, "7d": 7, "30d": 30, "all": 3650}
             days = delta_map.get(period, 7)
             since = now - timedelta(days=days)
 
@@ -292,7 +292,7 @@ async def _compute_trends(metric: str = "users", period: str = "30d", date_from:
         if date_from:
             since = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
         else:
-            delta_map = {"7d": 7, "30d": 30, "90d": 90}
+            delta_map = {"7d": 7, "30d": 30, "90d": 90, "all": 3650}
             days = delta_map.get(period, 30)
             since = now - timedelta(days=days)
 
@@ -414,7 +414,7 @@ async def _compute_providers(period: str = "7d"):
             return {"connection_types": [], "top_asn": [], "flags": {}}
 
         now = datetime.now(timezone.utc)
-        delta_map = {"24h": 1, "7d": 7, "30d": 30}
+        delta_map = {"24h": 1, "7d": 7, "30d": 30, "all": 3650}
         days = delta_map.get(period, 7)
         since = now - timedelta(days=days)
 

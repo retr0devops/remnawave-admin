@@ -252,6 +252,7 @@ function GeoMapCard() {
                   { value: '24h', label: t('analytics.periods.24h') },
                   { value: '7d', label: t('analytics.periods.7d') },
                   { value: '30d', label: t('analytics.periods.30d') },
+                  { value: 'all', label: t('analytics.periods.all') },
                 ]}
               />
             )}
@@ -896,6 +897,7 @@ function TrendsCard() {
                   { value: '7d', label: t('analytics.periods.7d') },
                   { value: '30d', label: t('analytics.periods.30d') },
                   { value: '90d', label: t('analytics.periods.90d') },
+                  { value: 'all', label: t('analytics.periods.all') },
                 ]}
               />
             )}
@@ -1292,6 +1294,7 @@ function ProvidersCard() {
                 { value: '24h', label: t('analytics.periods.24h') },
                 { value: '7d', label: t('analytics.periods.7d') },
                 { value: '30d', label: t('analytics.periods.30d') },
+                { value: 'all', label: t('analytics.periods.all') },
               ]}
             />
           </div>
@@ -1710,6 +1713,7 @@ function NodeMetricsHistoryCard() {
                 { value: '24h', label: t('analytics.periods.24h') },
                 { value: '7d', label: t('analytics.periods.7d') },
                 { value: '30d', label: t('analytics.periods.30d') },
+                { value: 'all', label: t('analytics.periods.all') },
               ]}
             />
           </div>
@@ -1990,6 +1994,7 @@ function TorrentAnalyticsCard() {
               { value: '7', label: '7d' },
               { value: '30', label: '30d' },
               { value: '90', label: '90d' },
+              { value: '3650', label: t('analytics.periods.all') },
             ]}
           />
         </div>

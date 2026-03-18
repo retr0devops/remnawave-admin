@@ -1277,7 +1277,7 @@ class DatabaseService:
         if not self.is_connected:
             return []
 
-        delta_map = {"24h": 1, "7d": 7, "30d": 30}
+        delta_map = {"24h": 1, "7d": 7, "30d": 30, "all": 3650}
         days = delta_map.get(period, 1)
 
         query = """
@@ -1323,8 +1323,8 @@ class DatabaseService:
         if not self.is_connected:
             return []
 
-        delta_map = {"24h": 1, "7d": 7, "30d": 30}
-        trunc_map = {"24h": "hour", "7d": "hour", "30d": "day"}
+        delta_map = {"24h": 1, "7d": 7, "30d": 30, "all": 3650}
+        trunc_map = {"24h": "hour", "7d": "hour", "30d": "day", "all": "day"}
         # For 7d we truncate to hour then floor to 6h in Python for simplicity
         days = delta_map.get(period, 1)
         trunc = trunc_map.get(period, "hour")
