@@ -32,10 +32,6 @@ COPY VERSION .
 ARG APP_VERSION=""
 RUN if [ -n "${APP_VERSION}" ] && [ "${APP_VERSION}" != "unknown" ]; then echo "${APP_VERSION}" > /app/VERSION; fi
 
-RUN mkdir -p /app/logs /app/geoip \
-    && useradd -m -r appuser \
-    && chown -R appuser:appuser /app
-
-USER appuser
+RUN mkdir -p /app/logs /app/geoip
 
 CMD ["python", "-m", "src.main"]

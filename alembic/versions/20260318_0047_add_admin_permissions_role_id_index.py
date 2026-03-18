@@ -13,10 +13,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # CONCURRENTLY cannot run inside a transaction block; disable autocommit via
-    # executing raw DDL through get_bind().
     op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_admin_permissions_role_id "
+        "CREATE INDEX IF NOT EXISTS idx_admin_permissions_role_id "
         "ON admin_permissions(role_id)"
     )
 

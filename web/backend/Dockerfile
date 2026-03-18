@@ -36,10 +36,7 @@ COPY alembic.ini /app/alembic.ini
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Create non-root user
-RUN useradd -m -r appuser && chown -R appuser:appuser /app
-
-USER appuser
+RUN mkdir -p /app/logs /app/geoip
 
 # Expose port
 EXPOSE 8081
