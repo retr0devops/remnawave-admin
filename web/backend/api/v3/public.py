@@ -525,11 +525,12 @@ async def api_v3_docs():
     if not get_web_settings().external_api_docs:
         raise HTTPException(status_code=404)
 
-    # Use FastAPI's built-in Swagger UI (served from local static files)
     from fastapi.openapi.docs import get_swagger_ui_html
     return get_swagger_ui_html(
         openapi_url="/api/v3/openapi.json",
         title="Remnawave Public API v3",
+        swagger_js_url="/api/v3/swagger-ui/swagger-ui-bundle.js",
+        swagger_css_url="/api/v3/swagger-ui/swagger-ui.css",
     )
 
 

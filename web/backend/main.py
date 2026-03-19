@@ -697,6 +697,12 @@ def create_app() -> FastAPI:
     # Public API v3 — enabled via EXTERNAL_API_ENABLED=true
     if settings.external_api_enabled:
         app.include_router(public_api_v3.router, prefix="/api/v3", tags=["public-api"])
+        # Serve local Swagger UI static files (no CDN dependency)
+        from pathlib import Path as _Path
+        _swagger_dir = _Path(__file__).parent / "static" / "swagger-ui"
+        if _swagger_dir.is_dir():
+            from fastapi.staticfiles import StaticFiles
+            app.mount("/api/v3/swagger-ui", StaticFiles(directory=str(_swagger_dir)), name="swagger-ui")
         logger.info("External API v3 enabled")
 
     # Health check endpoint
