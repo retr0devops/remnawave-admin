@@ -538,6 +538,239 @@ async def get_agent_install_command(
         raise api_error(500, E.INTERNAL_ERROR)
 
 
+# ── Bulk operations ──────────────────────────────────────────────
+
+
+@router.post("/bulk/generate-tokens")
+async def bulk_generate_tokens(
+    request: Request,
+    body: Optional[dict] = None,
+    admin: AdminUser = Depends(require_permission("nodes", "edit")),
+):
+    """Generate agent tokens for multiple nodes.
+
+    Body: {"uuids": ["uuid1", ...]}  — specific nodes
+    Body: {} or {"uuids": []}        — ALL nodes without tokens
+    """
+    from shared.database import db_service
+    from shared.agent_tokens import set_node_agent_token
+    from web.backend.schemas.bulk import BulkNodeTokenItem, BulkNodeTokenResult
+
+    if not db_service.is_connected:
+        raise api_error(503, E.DB_UNAVAILABLE)
+
+    uuids = (body or {}).get("uuids", [])
+
+    # If no UUIDs provided, get all nodes without tokens
+    if not uuids:
+        async with db_service.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT uuid::text, name FROM nodes WHERE agent_token IS NULL ORDER BY name"
+            )
+            uuids = [r["uuid"] for r in rows]
+            name_map = {r["uuid"]: r["name"] for r in rows}
+    else:
+        async with db_service.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT uuid::text, name FROM nodes WHERE uuid = ANY($1::uuid[])", uuids
+            )
+            name_map = {r["uuid"]: r["name"] for r in rows}
+
+    if not uuids:
+        return BulkNodeTokenResult(success=0, failed=0, tokens=[])
+
+    results = []
+    success, failed = 0, 0
+    for node_uuid in uuids:
+        try:
+            token = await set_node_agent_token(db_service, node_uuid)
+            if token:
+                results.append(BulkNodeTokenItem(
+                    node_uuid=node_uuid, token=token,
+                    name=name_map.get(node_uuid),
+                ))
+                success += 1
+            else:
+                results.append(BulkNodeTokenItem(
+                    node_uuid=node_uuid, error="token generation failed",
+                    name=name_map.get(node_uuid),
+                ))
+                failed += 1
+        except Exception as e:
+            results.append(BulkNodeTokenItem(
+                node_uuid=node_uuid, error=str(e),
+                name=name_map.get(node_uuid),
+            ))
+            failed += 1
+
+    await write_audit_log(
+        admin_id=admin.account_id,
+        admin_username=admin.username,
+        action="node.bulk_generate_tokens",
+        resource="nodes",
+        details=json.dumps({"count": success, "failed": failed}),
+        ip_address=get_client_ip(request),
+    )
+
+    return BulkNodeTokenResult(success=success, failed=failed, tokens=results)
+
+
+@router.post("/bulk/install-commands")
+async def bulk_install_commands(
+    request: Request,
+    body: Optional[dict] = None,
+    admin: AdminUser = Depends(require_permission("nodes", "edit")),
+):
+    """Generate install commands for multiple nodes.
+
+    Body: {"uuids": ["uuid1", ...]}  — specific nodes
+    Body: {} or {"uuids": []}        — ALL nodes
+    Auto-generates tokens for nodes that don't have one.
+    """
+    from shared.database import db_service
+    from shared.agent_tokens import set_node_agent_token
+    from web.backend.core.config import get_web_settings
+    from web.backend.schemas.bulk import BulkNodeInstallItem, BulkNodeInstallResult
+
+    if not db_service.is_connected:
+        raise api_error(503, E.DB_UNAVAILABLE)
+
+    uuids = (body or {}).get("uuids", [])
+
+    # Get nodes
+    async with db_service.acquire() as conn:
+        if uuids:
+            rows = await conn.fetch(
+                "SELECT uuid::text, name, agent_token FROM nodes WHERE uuid = ANY($1::uuid[]) ORDER BY name",
+                uuids,
+            )
+        else:
+            rows = await conn.fetch(
+                "SELECT uuid::text, name, agent_token FROM nodes ORDER BY name"
+            )
+
+    if not rows:
+        return BulkNodeInstallResult(success=0, failed=0, items=[])
+
+    # Build base URL
+    base_url = str(request.base_url).rstrip("/")
+    origin = request.headers.get("origin")
+    forwarded_host = request.headers.get("x-forwarded-host")
+    forwarded_proto = request.headers.get("x-forwarded-proto", "https")
+    if origin:
+        base_url = origin
+    elif forwarded_host:
+        base_url = f"{forwarded_proto}://{forwarded_host}"
+
+    ws_secret = get_web_settings().secret_key
+    script_url = "https://raw.githubusercontent.com/Case211/remnawave-admin/main/node-agent/install.sh"
+
+    results = []
+    success, failed = 0, 0
+    tokens_generated = 0
+
+    for row in rows:
+        node_uuid = row["uuid"]
+        name = row["name"]
+        token = row["agent_token"]
+
+        try:
+            # Auto-generate token if missing
+            if not token:
+                token = await set_node_agent_token(db_service, node_uuid)
+                if not token:
+                    results.append(BulkNodeInstallItem(
+                        node_uuid=node_uuid, name=name, error="token generation failed",
+                    ))
+                    failed += 1
+                    continue
+                tokens_generated += 1
+
+            install_cmd = (
+                f"curl -sSL {script_url} | "
+                f"bash -s -- --uuid {node_uuid} --url {base_url} --token {token} "
+                f"--ws-secret {ws_secret}"
+            )
+            results.append(BulkNodeInstallItem(
+                node_uuid=node_uuid, name=name, token=token,
+                install_command=install_cmd,
+            ))
+            success += 1
+        except Exception as e:
+            results.append(BulkNodeInstallItem(
+                node_uuid=node_uuid, name=name, error=str(e),
+            ))
+            failed += 1
+
+    await write_audit_log(
+        admin_id=admin.account_id,
+        admin_username=admin.username,
+        action="node.bulk_install_commands",
+        resource="nodes",
+        details=json.dumps({
+            "count": success, "failed": failed,
+            "tokens_generated": tokens_generated,
+        }),
+        ip_address=get_client_ip(request),
+    )
+
+    return BulkNodeInstallResult(success=success, failed=failed, items=results)
+
+
+@router.post("/bulk/revoke-tokens")
+async def bulk_revoke_tokens(
+    request: Request,
+    body: Optional[dict] = None,
+    admin: AdminUser = Depends(require_permission("nodes", "edit")),
+):
+    """Revoke agent tokens for multiple nodes.
+
+    Body: {"uuids": ["uuid1", ...]}  — specific nodes
+    Body: {} or {"uuids": []}        — ALL nodes with tokens
+    """
+    from shared.database import db_service
+    from web.backend.schemas.bulk import BulkOperationResult, BulkOperationError
+
+    if not db_service.is_connected:
+        raise api_error(503, E.DB_UNAVAILABLE)
+
+    uuids = (body or {}).get("uuids", [])
+
+    if not uuids:
+        async with db_service.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT uuid::text FROM nodes WHERE agent_token IS NOT NULL"
+            )
+            uuids = [r["uuid"] for r in rows]
+
+    if not uuids:
+        return BulkOperationResult(success=0, failed=0)
+
+    success, failed, errors = 0, 0, []
+    async with db_service.acquire() as conn:
+        for node_uuid in uuids:
+            try:
+                await conn.execute(
+                    "UPDATE nodes SET agent_token = NULL WHERE uuid = $1",
+                    node_uuid,
+                )
+                success += 1
+            except Exception as e:
+                failed += 1
+                errors.append(BulkOperationError(uuid=node_uuid, error=str(e)))
+
+    await write_audit_log(
+        admin_id=admin.account_id,
+        admin_username=admin.username,
+        action="node.bulk_revoke_tokens",
+        resource="nodes",
+        details=json.dumps({"count": success, "failed": failed}),
+        ip_address=get_client_ip(request),
+    )
+
+    return BulkOperationResult(success=success, failed=failed, errors=errors)
+
+
 @router.post("/{node_uuid}/disable", response_model=SuccessResponse)
 async def disable_node(
     node_uuid: str,

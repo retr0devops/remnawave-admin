@@ -19,3 +19,39 @@ class BulkOperationResult(BaseModel):
     success: int
     failed: int
     errors: List[BulkOperationError] = []
+
+
+class BulkNodeRequest(BaseModel):
+    """Request to perform a bulk operation on multiple nodes."""
+    uuids: List[str] = Field(..., min_length=1, max_length=500)
+
+
+class BulkNodeTokenItem(BaseModel):
+    """Single node token result."""
+    node_uuid: str
+    token: Optional[str] = None
+    name: Optional[str] = None
+    error: Optional[str] = None
+
+
+class BulkNodeTokenResult(BaseModel):
+    """Result of bulk token generation."""
+    success: int
+    failed: int
+    tokens: List[BulkNodeTokenItem] = []
+
+
+class BulkNodeInstallItem(BaseModel):
+    """Single node install command result."""
+    node_uuid: str
+    name: Optional[str] = None
+    token: Optional[str] = None
+    install_command: Optional[str] = None
+    error: Optional[str] = None
+
+
+class BulkNodeInstallResult(BaseModel):
+    """Result of bulk install command generation."""
+    success: int
+    failed: int
+    items: List[BulkNodeInstallItem] = []
