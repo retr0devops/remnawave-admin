@@ -525,20 +525,12 @@ async def api_v3_docs():
     if not get_web_settings().external_api_docs:
         raise HTTPException(status_code=404)
 
-    return """<!DOCTYPE html>
-<html><head><title>Remnawave Public API v3</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
-</head><body>
-<div id="swagger-ui"></div>
-<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-<script>
-SwaggerUIBundle({
-  url: '/api/v3/openapi.json',
-  dom_id: '#swagger-ui',
-  presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
-  layout: 'BaseLayout'
-})
-</script></body></html>"""
+    # Use FastAPI's built-in Swagger UI (served from local static files)
+    from fastapi.openapi.docs import get_swagger_ui_html
+    return get_swagger_ui_html(
+        openapi_url="/api/v3/openapi.json",
+        title="Remnawave Public API v3",
+    )
 
 
 @router.get("/openapi.json", include_in_schema=False)
