@@ -223,7 +223,7 @@ class DatabaseService:
     """
     
     _RAW_DATA_ID_CACHE_TTL = 60  # seconds
-    _RAW_DATA_ID_CACHE_MAX = 50_000  # max entries before eviction
+    _RAW_DATA_ID_CACHE_MAX = 10_000  # max entries before eviction
 
     def __init__(self):
         self._pool: Optional[Pool] = None

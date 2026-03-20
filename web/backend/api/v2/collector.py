@@ -48,6 +48,29 @@ CONNECTIONS_RETENTION_DAYS = 30
 # Semaphore: limit concurrent background violation detection batches
 _violation_semaphore = asyncio.Semaphore(3)
 
+# Track background tasks to prevent unbounded accumulation
+_background_tasks: set = set()
+_MAX_BACKGROUND_TASKS = 20
+
+def _schedule_background_task(coro):
+    """Schedule a background task with tracking and bounded concurrency."""
+    # Clean up completed tasks
+    done = {t for t in _background_tasks if t.done()}
+    _background_tasks.difference_update(done)
+
+    # Drop task if too many are queued (backpressure)
+    if len(_background_tasks) >= _MAX_BACKGROUND_TASKS:
+        logger.warning(
+            "Background task dropped: %d tasks already queued (limit %d)",
+            len(_background_tasks), _MAX_BACKGROUND_TASKS,
+        )
+        return
+
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
 # Кэш имён нод: {node_uuid: (node_name, cached_at)}
 _node_name_cache: dict[str, tuple[str, datetime]] = {}
 _NODE_NAME_TTL_MINUTES = 30
@@ -385,7 +408,7 @@ async def receive_connections(
                 for conn in report.connections
                 if user_uuid_cache.get(conn.user_email)
             )
-            asyncio.create_task(
+            _schedule_background_task(
                 _run_violation_detection(affected_user_uuids)
             )
         except Exception as e:
@@ -422,7 +445,7 @@ async def receive_connections(
                 logger.warning(
                     "Torrent events: node=%s count=%d", node_name, torrent_processed
                 )
-                asyncio.create_task(
+                _schedule_background_task(
                     _process_torrent_violations(report.torrent_events, user_uuid_cache)
                 )
 

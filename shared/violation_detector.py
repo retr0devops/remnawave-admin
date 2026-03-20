@@ -1188,7 +1188,7 @@ class UserProfileAnalyzer:
     """
     
     _BASELINE_CACHE_TTL = 3600  # 1 hour
-    _BASELINE_CACHE_MAX_SIZE = 10000
+    _BASELINE_CACHE_MAX_SIZE = 2000
 
     def __init__(self, db_service: DatabaseService):
         """
@@ -1199,7 +1199,7 @@ class UserProfileAnalyzer:
         """
         self.db = db_service
         self._baseline_cache: Dict[str, tuple] = {}  # {user_uuid: (baseline_dict, timestamp)}
-        self._baseline_locks: Dict[str, asyncio.Lock] = {}  # per-user locks to prevent stampede
+        self._baseline_lock = asyncio.Lock()  # single lock for baseline builds (prevents stampede)
     
     async def build_baseline(self, user_uuid: str, days: int = 30, connection_history: Optional[List] = None) -> Dict[str, Any]:
         """
@@ -1384,10 +1384,7 @@ class UserProfileAnalyzer:
                     baseline = cached_baseline
 
             if baseline is None:
-                # Per-user lock prevents cache stampede
-                if user_uuid not in self._baseline_locks:
-                    self._baseline_locks[user_uuid] = asyncio.Lock()
-                async with self._baseline_locks[user_uuid]:
+                async with self._baseline_lock:
                     # Double-check after acquiring lock
                     cached = self._baseline_cache.get(user_uuid)
                     if cached and (time.time() - cached[1]) < self._BASELINE_CACHE_TTL:
