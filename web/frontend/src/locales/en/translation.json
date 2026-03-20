@@ -1008,7 +1008,19 @@
       "terminal": "Terminal",
       "terminalDesc": "Select a node to open a terminal session",
       "scripts": "Scripts",
-      "history": "History"
+      "history": "History",
+      "scheduled": "Scheduled",
+      "bulk": "Bulk Ops"
+    },
+    "scheduled": {
+      "description": "Cron-based script execution on nodes. Scripts run automatically on schedule.",
+      "noTasks": "No scheduled tasks"
+    },
+    "bulk": {
+      "description": "Mass operations on node agent tokens. Empty body = all applicable nodes.",
+      "generateTokens": "Generate Tokens (all without)",
+      "installCommands": "Install Commands (all)",
+      "revokeTokens": "Revoke All Tokens"
     },
     "toast": {
       "restarted": "Node restarted",
@@ -2839,7 +2851,19 @@
     "tabs": {
       "providers": "Providers",
       "history": "Billing History",
-      "nodes": "Billing Nodes"
+      "nodes": "Billing Nodes",
+      "analytics": "Analytics"
+    },
+    "analytics": {
+      "monthlySpend": "Monthly Spend",
+      "costPerUser": "Cost / Active User",
+      "costPerGb": "Cost / GB",
+      "costPerNode": "Cost / Node",
+      "monthlySeries": "Monthly Spending",
+      "perNode": "Per Node",
+      "nodeName": "Node",
+      "provider": "Provider",
+      "usersOnline": "Online"
     },
     "providers": {
       "description": "Infrastructure providers for hosting nodes",

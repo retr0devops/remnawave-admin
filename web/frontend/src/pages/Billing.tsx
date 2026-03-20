@@ -290,7 +290,7 @@ export default function Billing({ embedded }: { embedded?: boolean } = {}) {
           </TabsTrigger>
           <TabsTrigger value="analytics">
             <BarChart3 className="w-4 h-4 mr-2" />
-            {t('billing.tabs.analytics', { defaultValue: 'Analytics' })}
+            {t('billing.tabs.analytics')}
           </TabsTrigger>
         </TabsList>
 
@@ -899,10 +899,10 @@ function BillingAnalyticsTab() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: t('billing.analytics.monthlySpend', { defaultValue: 'Monthly Spend' }), value: `$${data?.monthly_cost ?? 0}`, color: 'text-white' },
-          { label: t('billing.analytics.costPerUser', { defaultValue: 'Cost / Active User' }), value: `$${data?.cost_per_user ?? 0}`, color: 'text-primary-400' },
-          { label: t('billing.analytics.costPerGb', { defaultValue: 'Cost / GB' }), value: `$${data?.cost_per_gb ?? 0}`, color: 'text-cyan-400' },
-          { label: t('billing.analytics.costPerNode', { defaultValue: 'Cost / Node' }), value: `$${data?.cost_per_node ?? 0}`, color: 'text-yellow-400' },
+          { label: t('billing.analytics.monthlySpend'), value: `$${data?.monthly_cost ?? 0}`, color: 'text-white' },
+          { label: t('billing.analytics.costPerUser'), value: `$${data?.cost_per_user ?? 0}`, color: 'text-primary-400' },
+          { label: t('billing.analytics.costPerGb'), value: `$${data?.cost_per_gb ?? 0}`, color: 'text-cyan-400' },
+          { label: t('billing.analytics.costPerNode'), value: `$${data?.cost_per_node ?? 0}`, color: 'text-yellow-400' },
         ].map((kpi) => (
           <Card key={kpi.label}>
             <CardContent className="p-4 text-center">
@@ -917,7 +917,7 @@ function BillingAnalyticsTab() {
       {Array.isArray(data?.monthly_series) && data!.monthly_series.length > 0 && (
         <Card>
           <CardContent className="p-4">
-            <h3 className="text-sm font-medium text-white mb-3">{t('billing.analytics.monthlySeries', { defaultValue: 'Monthly Spending' })}</h3>
+            <h3 className="text-sm font-medium text-white mb-3">{t('billing.analytics.monthlySeries')}</h3>
             <div className="space-y-1">
               {data!.monthly_series.map((m: { month: string; amount: number }) => (
                 <div key={m.month} className="flex items-center gap-2">
@@ -940,16 +940,16 @@ function BillingAnalyticsTab() {
       {items.length > 0 && (
         <Card>
           <CardContent className="p-4">
-            <h3 className="text-sm font-medium text-white mb-3">{t('billing.analytics.perNode', { defaultValue: 'Per Node' })}</h3>
+            <h3 className="text-sm font-medium text-white mb-3">{t('billing.analytics.perNode')}</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-[var(--glass-border)]">
-                    <th className="text-left text-xs text-muted-foreground py-2">{t('billing.analytics.nodeName', { defaultValue: 'Node' })}</th>
-                    <th className="text-left text-xs text-muted-foreground py-2">{t('billing.analytics.provider', { defaultValue: 'Provider' })}</th>
+                    <th className="text-left text-xs text-muted-foreground py-2">{t('billing.analytics.nodeName')}</th>
+                    <th className="text-left text-xs text-muted-foreground py-2">{t('billing.analytics.provider')}</th>
                     <th className="text-center text-xs text-muted-foreground py-2">CPU</th>
                     <th className="text-center text-xs text-muted-foreground py-2">RAM</th>
-                    <th className="text-right text-xs text-muted-foreground py-2">{t('billing.analytics.usersOnline', { defaultValue: 'Online' })}</th>
+                    <th className="text-right text-xs text-muted-foreground py-2">{t('billing.analytics.usersOnline')}</th>
                   </tr>
                 </thead>
                 <tbody>

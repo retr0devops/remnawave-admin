@@ -633,12 +633,12 @@ export default function Fleet() {
           {canScripts && (
             <TabsTrigger value="scheduled" className="text-xs gap-1.5">
               <Clock className="w-3.5 h-3.5" />
-              {t('fleet.tabs.scheduled', { defaultValue: 'Scheduled' })}
+              {t('fleet.tabs.scheduled')}
             </TabsTrigger>
           )}
           <TabsTrigger value="bulk" className="text-xs gap-1.5">
             <Zap className="w-3.5 h-3.5" />
-            {t('fleet.tabs.bulk', { defaultValue: 'Bulk Ops' })}
+            {t('fleet.tabs.bulk')}
           </TabsTrigger>
         </TabsList>
 
@@ -852,12 +852,12 @@ function ScheduledTasksTab() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        {t('fleet.scheduled.description', { defaultValue: 'Cron-based script execution on nodes. Scripts run automatically on schedule.' })}
+        {t('fleet.scheduled.description')}
       </p>
 
       {tasks.length === 0 ? (
         <div className="h-32 flex items-center justify-center text-muted-foreground">
-          <p>{t('fleet.scheduled.noTasks', { defaultValue: 'No scheduled tasks' })}</p>
+          <p>{t('fleet.scheduled.noTasks')}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -947,7 +947,7 @@ function BulkNodeOpsTab() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        {t('fleet.bulk.description', { defaultValue: 'Mass operations on node agent tokens. Empty body = all applicable nodes.' })}
+        {t('fleet.bulk.description')}
       </p>
 
       <div className="flex flex-wrap gap-3">
@@ -957,7 +957,7 @@ function BulkNodeOpsTab() {
           className="gap-2"
         >
           <Zap className="w-4 h-4" />
-          {t('fleet.bulk.generateTokens', { defaultValue: 'Generate Tokens (all without)' })}
+          {t('fleet.bulk.generateTokens')}
         </Button>
         <Button
           variant="outline"
@@ -966,7 +966,7 @@ function BulkNodeOpsTab() {
           className="gap-2"
         >
           <Server className="w-4 h-4" />
-          {t('fleet.bulk.installCommands', { defaultValue: 'Install Commands (all)' })}
+          {t('fleet.bulk.installCommands')}
         </Button>
         <Button
           variant="destructive"
@@ -975,7 +975,7 @@ function BulkNodeOpsTab() {
           className="gap-2"
         >
           <ShieldAlert className="w-4 h-4" />
-          {t('fleet.bulk.revokeTokens', { defaultValue: 'Revoke All Tokens' })}
+          {t('fleet.bulk.revokeTokens')}
         </Button>
       </div>
 
