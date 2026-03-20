@@ -763,7 +763,13 @@
     },
     "createNode": {
       "title": "Add node",
-      "description": "New node creation form"
+      "description": "New node creation form",
+      "configProfile": "Config profile",
+      "selectProfile": "Select profile",
+      "inbounds": "Inbounds",
+      "selectAll": "Select all",
+      "deselectAll": "Deselect all",
+      "noInbounds": "No inbounds available"
     },
     "agentToken": {
       "title": "Node Agent Token",

@@ -54,6 +54,8 @@ class NodeCreate(BaseModel):
     name: str
     address: str
     port: int = 443
+    config_profile_uuid: str
+    active_inbounds: List[str]
 
 
 class NodeUpdate(BaseModel):

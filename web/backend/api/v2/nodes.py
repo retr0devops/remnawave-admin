@@ -231,6 +231,8 @@ async def create_node(
             name=data.name,
             address=data.address,
             port=data.port,
+            config_profile_uuid=data.config_profile_uuid,
+            active_inbounds=data.active_inbounds,
         )
 
         # Upstream API wraps data in 'response' key

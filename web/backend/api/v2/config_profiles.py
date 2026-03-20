@@ -39,6 +39,21 @@ async def list_inbounds(
         raise HTTPException(status_code=502, detail="Service temporarily unavailable")
 
 
+@router.get("/{profile_uuid}/inbounds")
+async def list_profile_inbounds(
+    profile_uuid: str,
+    admin: AdminUser = Depends(require_permission("resources", "view")),
+):
+    """List inbounds for a specific config profile."""
+    try:
+        from shared.api_client import api_client
+        result = await api_client.get_inbounds_by_profile_uuid(profile_uuid)
+        return result.get("response", result)
+    except Exception as e:
+        logger.error("Failed to list profile inbounds: %s", e)
+        raise HTTPException(status_code=502, detail="Service temporarily unavailable")
+
+
 @router.get("/{profile_uuid}")
 async def get_config_profile(
     profile_uuid: str,

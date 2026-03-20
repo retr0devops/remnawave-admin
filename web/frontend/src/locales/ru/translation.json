@@ -763,7 +763,13 @@
     },
     "createNode": {
       "title": "Добавление ноды",
-      "description": "Форма создания новой ноды"
+      "description": "Форма создания новой ноды",
+      "configProfile": "Профиль конфигурации",
+      "selectProfile": "Выберите профиль",
+      "inbounds": "Inbounds",
+      "selectAll": "Выбрать все",
+      "deselectAll": "Снять все",
+      "noInbounds": "Нет доступных inbounds"
     },
     "agentToken": {
       "title": "Токен Node Agent",

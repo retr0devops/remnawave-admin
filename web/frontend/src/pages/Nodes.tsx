@@ -26,6 +26,7 @@ import {
   Terminal,
 } from 'lucide-react'
 import client from '../api/client'
+import { resourcesApi } from '../api/resources'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -46,6 +47,8 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
@@ -194,6 +197,13 @@ function NodeEditModal({
   )
 }
 
+// Inbound type from config profiles API
+interface Inbound {
+  uuid: string
+  tag: string
+  type: string
+}
+
 // Node create modal
 function NodeCreateModal({
   open,
@@ -214,16 +224,67 @@ function NodeCreateModal({
     address: '',
     port: '62050',
   })
+  const [selectedProfileUuid, setSelectedProfileUuid] = useState('')
+  const [selectedInbounds, setSelectedInbounds] = useState<string[]>([])
+
+  // Fetch config profiles
+  const { data: configProfiles = [] } = useQuery({
+    queryKey: ['config-profiles'],
+    queryFn: resourcesApi.getConfigProfiles,
+    enabled: open,
+  })
+
+  // Fetch inbounds for selected profile
+  const { data: profileInbounds = [] } = useQuery<Inbound[]>({
+    queryKey: ['config-profile-inbounds', selectedProfileUuid],
+    queryFn: async () => {
+      const { data } = await client.get(`/config-profiles/${selectedProfileUuid}/inbounds`)
+      return Array.isArray(data) ? data : []
+    },
+    enabled: open && !!selectedProfileUuid,
+  })
+
+  // Reset form when modal closes
+  useEffect(() => {
+    if (!open) {
+      setForm({ name: '', address: '', port: '62050' })
+      setSelectedProfileUuid('')
+      setSelectedInbounds([])
+    }
+  }, [open])
+
+  // Reset inbounds when profile changes
+  useEffect(() => {
+    setSelectedInbounds([])
+  }, [selectedProfileUuid])
+
+  const toggleInbound = (uuid: string) => {
+    setSelectedInbounds((prev) =>
+      prev.includes(uuid) ? prev.filter((id) => id !== uuid) : [...prev, uuid]
+    )
+  }
+
+  const selectAllInbounds = () => {
+    if (selectedInbounds.length === profileInbounds.length) {
+      setSelectedInbounds([])
+    } else {
+      setSelectedInbounds(profileInbounds.map((ib) => ib.uuid))
+    }
+  }
 
   const handleSubmit = () => {
     const createData: Record<string, unknown> = {
       name: form.name.trim(),
       address: form.address.trim(),
+      config_profile_uuid: selectedProfileUuid,
+      active_inbounds: selectedInbounds,
     }
     const port = parseInt(form.port, 10)
     if (!isNaN(port)) createData.port = port
     onSave(createData)
   }
+
+  const isValid = form.name.trim() && form.address.trim() && form.port && selectedProfileUuid && selectedInbounds.length > 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -271,6 +332,57 @@ function NodeCreateModal({
               placeholder={t('nodes.editNode.port')}
             />
           </div>
+
+          {/* Config Profile */}
+          <div className="space-y-2">
+            <Label>{t('nodes.createNode.configProfile')}</Label>
+            <Select value={selectedProfileUuid} onValueChange={setSelectedProfileUuid}>
+              <SelectTrigger>
+                <SelectValue placeholder={t('nodes.createNode.selectProfile')} />
+              </SelectTrigger>
+              <SelectContent>
+                {configProfiles.map((p: { uuid: string; name: string }) => (
+                  <SelectItem key={p.uuid} value={p.uuid}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Inbounds */}
+          {selectedProfileUuid && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>{t('nodes.createNode.inbounds')}</Label>
+                {profileInbounds.length > 0 && (
+                  <button
+                    type="button"
+                    className="text-xs text-primary hover:underline"
+                    onClick={selectAllInbounds}
+                  >
+                    {selectedInbounds.length === profileInbounds.length
+                      ? t('nodes.createNode.deselectAll')
+                      : t('nodes.createNode.selectAll')}
+                  </button>
+                )}
+              </div>
+              {profileInbounds.length === 0 ? (
+                <p className="text-sm text-dark-300">{t('nodes.createNode.noInbounds')}</p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto rounded-lg border border-dark-600 p-3">
+                  {profileInbounds.map((ib) => (
+                    <label key={ib.uuid} className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={selectedInbounds.includes(ib.uuid)}
+                        onCheckedChange={() => toggleInbound(ib.uuid)}
+                      />
+                      <span className="text-sm">{ib.tag}</span>
+                      <span className="text-xs text-dark-300 ml-auto">{ib.type}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -283,7 +395,7 @@ function NodeCreateModal({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={isPending || !form.name.trim() || !form.address.trim() || !form.port}
+            disabled={isPending || !isValid}
           >
             {isPending ? t('nodes.actions.creating') : t('nodes.actions.create')}
           </Button>
