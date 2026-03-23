@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -46,8 +46,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-
-const ReferralGraph = lazy(() => import('./ReferralGraph'))
+import ReferralGraph from './ReferralGraph'
 
 // ── Helpers ──
 
@@ -744,22 +743,16 @@ export default function BedolagaCustomerDetail() {
 
           {/* Referral graph */}
           {showGraph && (
-            <Suspense fallback={
-              <div className="h-[400px] rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] flex items-center justify-center">
+            refTreeData ? (
+              <ReferralGraph
+                rootUser={{ id: user.id, username: user.username, first_name: user.first_name, status: user.status, balance_rubles: user.balance_rubles }}
+                tree={Array.isArray(refTreeData?.children) ? refTreeData.children : Array.isArray(refTreeData) ? refTreeData : []}
+              />
+            ) : (
+              <div className="h-[420px] rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] flex items-center justify-center">
                 <RefreshCw className="w-6 h-6 text-dark-400 animate-spin" />
               </div>
-            }>
-              {refTreeData ? (
-                <ReferralGraph
-                  rootUser={{ id: user.id, username: user.username, first_name: user.first_name, status: user.status, balance_rubles: user.balance_rubles }}
-                  tree={Array.isArray(refTreeData?.children) ? refTreeData.children : Array.isArray(refTreeData) ? refTreeData : []}
-                />
-              ) : (
-                <div className="h-[400px] rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] flex items-center justify-center">
-                  <RefreshCw className="w-6 h-6 text-dark-400 animate-spin" />
-                </div>
-              )}
-            </Suspense>
+            )
           )}
 
           {/* Referral list */}
