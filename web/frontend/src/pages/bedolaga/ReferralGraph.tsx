@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   ReactFlow,
+  ReactFlowProvider,
   Node,
   Edge,
   Background,
@@ -262,7 +263,15 @@ function buildGraph(
 
 // ── Main Component ──
 
-export default function ReferralGraph({ rootUser, tree, stats }: ReferralGraphProps) {
+export default function ReferralGraph(props: ReferralGraphProps) {
+  return (
+    <ReactFlowProvider>
+      <ReferralGraphInner {...props} />
+    </ReactFlowProvider>
+  )
+}
+
+function ReferralGraphInner({ rootUser, tree, stats }: ReferralGraphProps) {
   const { t } = useTranslation()
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
