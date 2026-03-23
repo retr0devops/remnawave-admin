@@ -684,7 +684,7 @@ export default function BedolagaCustomerDetail() {
       </div>
 
       {/* ── Referrals section ── */}
-      {(referrals.length > 0 || user.referral_code || (refStats as any).total_invited > 0) && (
+      {(referrals.length > 0 || user.referral_code || user.referral_count > 0 || user.referrals_count > 0 || user.invited_count > 0 || (refStats as any).total_invited > 0) && (
         <div className="space-y-4">
           {/* Referral stats */}
           <div className="flex items-center justify-between mt-2">
@@ -722,7 +722,7 @@ export default function BedolagaCustomerDetail() {
             <Card className="glass-card">
               <CardContent className="p-3">
                 <p className="text-xs text-dark-300">{t('bedolaga.customerDetail.refInvited')}</p>
-                <p className="text-xl font-bold mt-0.5">{(refStats as any).total_invited ?? referrals.length}</p>
+                <p className="text-xl font-bold mt-0.5">{(refStats as any).total_invited ?? user.referral_count ?? user.referrals_count ?? user.invited_count ?? referrals.length}</p>
               </CardContent>
             </Card>
             <Card className="glass-card">

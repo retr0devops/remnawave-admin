@@ -33,6 +33,7 @@ import {
   Heart,
   Ticket,
   Megaphone,
+  Share2,
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { usePermissionStore } from '../../store/permissionStore'
@@ -140,6 +141,7 @@ const navigation: NavigationEntry[] = [
       { name: 'nav.bedolaga.customers', href: '/bedolaga/customers', icon: Users, permission: { resource: 'bedolaga_customers', action: 'view' } },
       { name: 'nav.bedolaga.promo', href: '/bedolaga/promo', icon: Ticket, permission: { resource: 'bedolaga_promo', action: 'view' } },
       { name: 'nav.bedolaga.marketing', href: '/bedolaga/marketing', icon: Megaphone, permission: { resource: 'bedolaga_marketing', action: 'view' } },
+      { name: 'nav.bedolaga.referrals', href: '/bedolaga/referrals', icon: Share2, permission: { resource: 'bedolaga', action: 'view' } },
     ],
   },
   // Administration

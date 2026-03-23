@@ -125,6 +125,7 @@
       "customers": "Клиенты",
       "promo": "Промо",
       "marketing": "Маркетинг",
+      "referrals": "Рефералы",
       "tickets": "Поддержка",
       "partners": "Партнёры",
       "activities": "Активности",
@@ -3441,6 +3442,21 @@
       "cancelMailing": "Отменить",
       "mailingCancelled": "Рассылка отменена",
       "mailingCancelError": "Ошибка отмены рассылки"
+    },
+    "referrals": {
+      "title": "Реферальная сеть",
+      "subtitle": "Визуальная карта реферальных связей",
+      "totalUsers": "Пользователей",
+      "totalReferrers": "Рефереров",
+      "totalCampaigns": "Кампаний",
+      "totalEarnings": "Реф. доход",
+      "searchPlaceholder": "Поиск по имени...",
+      "noData": "Нет данных о рефералах",
+      "openProfile": "Открыть профиль",
+      "directReferrals": "Прямых рефералов",
+      "branchUsers": "В ветке",
+      "branchRevenue": "Доход ветки",
+      "personalRevenue": "Личный доход"
     }
   },
   "notFound": {

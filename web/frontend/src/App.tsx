@@ -42,6 +42,7 @@ const BedolagaCustomers = lazy(() => import('./pages/bedolaga/BedolagaCustomers'
 const BedolagaCustomerDetail = lazy(() => import('./pages/bedolaga/BedolagaCustomerDetail'))
 const BedolagaPromo = lazy(() => import('./pages/bedolaga/BedolagaPromo'))
 const BedolagaMarketing = lazy(() => import('./pages/bedolaga/BedolagaMarketing'))
+const BedolagaReferrals = lazy(() => import('./pages/bedolaga/BedolagaReferrals'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 
 /**
@@ -142,6 +143,7 @@ export default function App() {
                         <Route path="/bedolaga/customers/:id" element={<BedolagaCustomerDetail />} />
                         <Route path="/bedolaga/promo" element={<BedolagaPromo />} />
                         <Route path="/bedolaga/marketing" element={<BedolagaMarketing />} />
+                        <Route path="/bedolaga/referrals" element={<BedolagaReferrals />} />
                         <Route path="/settings" element={<Settings />} />
                         <Route path="*" element={<NotFound />} />
                       </Routes>

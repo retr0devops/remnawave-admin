@@ -129,6 +129,18 @@ class BedolagaClient:
     async def get_user_referral_tree(self, user_id: int, depth: int = 3) -> dict:
         return await self._get(f"/users/{user_id}/referral-tree", params={"depth": depth})
 
+    async def get_referral_network(self) -> dict:
+        return await self._get("/cabinet/admin/referral-network/")
+
+    async def get_referral_network_user(self, user_id: int) -> dict:
+        return await self._get(f"/cabinet/admin/referral-network/user/{user_id}")
+
+    async def get_referral_network_campaign(self, campaign_id: int) -> dict:
+        return await self._get(f"/cabinet/admin/referral-network/campaign/{campaign_id}")
+
+    async def search_referral_network(self, query: str) -> dict:
+        return await self._get("/cabinet/admin/referral-network/search", params={"q": query})
+
     # ── Transactions ──
 
     async def list_transactions(self, limit: int = 20, offset: int = 0, **filters) -> dict:

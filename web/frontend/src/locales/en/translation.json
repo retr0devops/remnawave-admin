@@ -125,6 +125,7 @@
       "customers": "Customers",
       "promo": "Promo",
       "marketing": "Marketing",
+      "referrals": "Referrals",
       "tickets": "Support",
       "partners": "Partners",
       "activities": "Activities",
@@ -3441,6 +3442,21 @@
       "cancelMailing": "Cancel",
       "mailingCancelled": "Mailing cancelled",
       "mailingCancelError": "Failed to cancel mailing"
+    },
+    "referrals": {
+      "title": "Referral Network",
+      "subtitle": "Visual map of referral connections",
+      "totalUsers": "Users",
+      "totalReferrers": "Referrers",
+      "totalCampaigns": "Campaigns",
+      "totalEarnings": "Ref. earnings",
+      "searchPlaceholder": "Search by name...",
+      "noData": "No referral data",
+      "openProfile": "Open profile",
+      "directReferrals": "Direct referrals",
+      "branchUsers": "In branch",
+      "branchRevenue": "Branch revenue",
+      "personalRevenue": "Personal revenue"
     }
   },
   "notFound": {
