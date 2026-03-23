@@ -34,24 +34,31 @@ interface OverviewData {
 
 interface FullStatsData {
   users?: {
-    total?: number; active?: number; blocked?: number; balance_rubles?: number
+    total_users?: number; active_users?: number; blocked_users?: number
     new_today?: number; new_week?: number; new_month?: number
   }
   subscriptions?: {
-    active?: number; expired?: number
-    trial?: { count?: number; conversions?: number }
-    detailed_by_plan?: Record<string, { count?: number; revenue_rubles?: number }>
+    active_subscriptions?: number; trial_subscriptions?: number; paid_subscriptions?: number
+    trial_to_paid_conversion?: number
+    trial_statistics?: { used_trials?: number; active_trials?: number }
   }
   transactions?: {
-    income?: { today?: number; week?: number; month?: number }
-    expenses?: { today?: number; week?: number; month?: number }
-    by_type?: Record<string, number>
-    by_method?: Record<string, number>
+    totals?: { income_rubles?: number; expenses_rubles?: number; profit_rubles?: number; subscription_income_rubles?: number }
+    today?: { transactions_count?: number; income_rubles?: number }
+    by_type?: Record<string, { count?: number; amount?: number }>
+    by_payment_method?: Record<string, { count?: number; amount?: number }>
   }
   referrals?: {
-    total_referrers?: number
-    earnings_by_period?: { today?: number; week?: number; month?: number }
-    top_referrers?: Array<{ username?: string; invited_count?: number; earnings_rubles?: number }>
+    users_with_referrals?: number
+    active_referrers?: number
+    total_paid_rubles?: number
+    today_earnings_rubles?: number
+    week_earnings_rubles?: number
+    month_earnings_rubles?: number
+    top_referrers?: Array<{
+      user_id?: number; display_name?: string; username?: string; telegram_id?: number
+      total_earned_kopeks?: number; referrals_count?: number
+    }>
   }
 }
 
@@ -194,7 +201,7 @@ export default function Bedolaga() {
   const fullUsers = full?.users
   const txns = full?.transactions
   const refs = full?.referrals
-  const trial = full?.subscriptions?.trial
+  const trial = full?.subscriptions?.trial_statistics
 
   const healthOk = health?.status === 'ok'
   const inMaintenance = health?.features?.maintenance
@@ -288,8 +295,8 @@ export default function Bedolaga() {
               </div>
               {trial && (
                 <div className="mt-3 flex items-center justify-between text-xs text-dark-300 px-1">
-                  <span>{t('bedolaga.trial')}: {trial.count ?? 0}</span>
-                  <span>{t('bedolaga.conversions')}: {trial.conversions ?? 0}</span>
+                  <span>{t('bedolaga.trial')}: {trial.active_trials ?? 0}</span>
+                  <span>Used: {trial.used_trials ?? 0}</span>
                 </div>
               )}
             </CardContent>
@@ -313,14 +320,14 @@ export default function Bedolaga() {
                     <span className="w-24 text-right">{t('bedolaga.periods.month')}</span>
                   </div>
                 </div>
-                <PeriodRow label={t('bedolaga.income.revenue')} today={txns?.income?.today} week={txns?.income?.week} month={txns?.income?.month} />
-                <PeriodRow label={t('bedolaga.income.expenses')} today={txns?.expenses?.today} week={txns?.expenses?.week} month={txns?.expenses?.month} />
+                <PeriodRow label={t('bedolaga.income.revenue')} today={txns?.today?.income_rubles} week={undefined} month={txns?.totals?.income_rubles} />
+                <PeriodRow label={t('bedolaga.income.expenses')} today={undefined} week={undefined} month={txns?.totals?.expenses_rubles} />
               </div>
             </CardContent>
           </Card>
 
           {/* Payment methods */}
-          {txns?.by_method && Object.keys(txns.by_method).length > 0 && (
+          {txns?.by_payment_method && Object.keys(txns.by_payment_method).length > 0 && (
             <Card className="glass-card">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -330,12 +337,15 @@ export default function Bedolaga() {
               </CardHeader>
               <CardContent className="pt-0">
                 <div className="space-y-2">
-                  {Object.entries(txns.by_method)
-                    .sort(([, a], [, b]) => (b as number) - (a as number))
-                    .map(([method, count]) => (
+                  {Object.entries(txns.by_payment_method)
+                    .sort(([, a], [, b]) => ((b as any).count ?? 0) - ((a as any).count ?? 0))
+                    .map(([method, data]) => (
                       <div key={method} className="flex items-center justify-between py-1.5 border-b border-[var(--glass-border)] last:border-0">
                         <span className="text-sm">{method}</span>
-                        <span className="text-sm font-medium">{(count as number).toLocaleString()}</span>
+                        <div className="flex items-center gap-3 text-sm">
+                          <span className="text-dark-300">{(data as any).count ?? 0}x</span>
+                          <span className="font-medium">{(((data as any).amount ?? 0) / 100).toLocaleString()} ₽</span>
+                        </div>
                       </div>
                     ))}
                 </div>
@@ -355,21 +365,17 @@ export default function Bedolaga() {
               <CardContent className="pt-0">
                 <div className="flex items-center gap-4 mb-3">
                   <div className="text-center p-3 rounded-lg bg-[var(--glass-bg)] flex-1">
-                    <p className="text-xl font-bold">{refs.total_referrers?.toLocaleString() ?? '—'}</p>
+                    <p className="text-xl font-bold">{refs.active_referrers?.toLocaleString() ?? refs.users_with_referrals?.toLocaleString() ?? '—'}</p>
                     <p className="text-xs text-dark-300">{t('bedolaga.referrals.totalReferrers')}</p>
                   </div>
-                  {refs.earnings_by_period && (
-                    <>
-                      <div className="text-center p-3 rounded-lg bg-[var(--glass-bg)] flex-1">
-                        <p className="text-xl font-bold">{refs.earnings_by_period.today?.toLocaleString() ?? 0} ₽</p>
-                        <p className="text-xs text-dark-300">{t('bedolaga.periods.today')}</p>
-                      </div>
-                      <div className="text-center p-3 rounded-lg bg-[var(--glass-bg)] flex-1">
-                        <p className="text-xl font-bold">{refs.earnings_by_period.month?.toLocaleString() ?? 0} ₽</p>
-                        <p className="text-xs text-dark-300">{t('bedolaga.periods.month')}</p>
-                      </div>
-                    </>
-                  )}
+                  <div className="text-center p-3 rounded-lg bg-[var(--glass-bg)] flex-1">
+                    <p className="text-xl font-bold">{refs.today_earnings_rubles?.toLocaleString() ?? 0} ₽</p>
+                    <p className="text-xs text-dark-300">{t('bedolaga.periods.today')}</p>
+                  </div>
+                  <div className="text-center p-3 rounded-lg bg-[var(--glass-bg)] flex-1">
+                    <p className="text-xl font-bold">{refs.month_earnings_rubles?.toLocaleString() ?? 0} ₽</p>
+                    <p className="text-xs text-dark-300">{t('bedolaga.periods.month')}</p>
+                  </div>
                 </div>
                 {Array.isArray(refs.top_referrers) && refs.top_referrers.length > 0 && (
                   <div className="space-y-1.5">
@@ -378,11 +384,11 @@ export default function Bedolaga() {
                       <div key={i} className="flex items-center justify-between py-1 text-sm">
                         <span className="text-dark-200">
                           <span className="text-dark-400 mr-1.5">#{i + 1}</span>
-                          {ref.username || '—'}
+                          {ref.display_name || ref.username || '—'}
                         </span>
                         <div className="flex items-center gap-3 text-xs">
-                          <span className="text-dark-300">{ref.invited_count ?? 0} inv</span>
-                          <span className="font-medium">{ref.earnings_rubles?.toLocaleString() ?? 0} ₽</span>
+                          <span className="text-dark-300">{ref.referrals_count ?? 0} inv</span>
+                          <span className="font-medium">{ref.total_earned_kopeks ? (ref.total_earned_kopeks / 100).toLocaleString() : 0} ₽</span>
                         </div>
                       </div>
                     ))}
@@ -392,8 +398,8 @@ export default function Bedolaga() {
             </Card>
           )}
 
-          {/* Subscription plans */}
-          {full?.subscriptions?.detailed_by_plan && Object.keys(full.subscriptions.detailed_by_plan).length > 0 && (
+          {/* Subscription stats */}
+          {full?.subscriptions && (
             <Card className="glass-card">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -402,20 +408,21 @@ export default function Bedolaga() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-0">
-                <div className="space-y-2">
-                  {Object.entries(full.subscriptions.detailed_by_plan)
-                    .sort(([, a], [, b]) => ((b as any).count ?? 0) - ((a as any).count ?? 0))
-                    .map(([plan, data]) => (
-                      <div key={plan} className="flex items-center justify-between py-1.5 border-b border-[var(--glass-border)] last:border-0">
-                        <span className="text-sm">{plan}</span>
-                        <div className="flex items-center gap-3 text-sm">
-                          <span className="text-dark-300">{(data as any).count ?? 0} sub</span>
-                          {(data as any).revenue_rubles != null && (
-                            <span className="font-medium">{(data as any).revenue_rubles.toLocaleString()} ₽</span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="text-center p-3 rounded-lg bg-[var(--glass-bg)]">
+                    <p className="text-xl font-bold">{full.subscriptions.paid_subscriptions ?? 0}</p>
+                    <p className="text-xs text-dark-300">{t('bedolaga.stats.activeSubs')}</p>
+                  </div>
+                  <div className="text-center p-3 rounded-lg bg-[var(--glass-bg)]">
+                    <p className="text-xl font-bold">{full.subscriptions.trial_subscriptions ?? 0}</p>
+                    <p className="text-xs text-dark-300">{t('bedolaga.trial')}</p>
+                  </div>
+                  {full.subscriptions.trial_to_paid_conversion != null && (
+                    <div className="text-center p-3 rounded-lg bg-[var(--glass-bg)] col-span-2">
+                      <p className="text-xl font-bold">{full.subscriptions.trial_to_paid_conversion.toFixed(1)}%</p>
+                      <p className="text-xs text-dark-300">{t('bedolaga.conversions')}</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
