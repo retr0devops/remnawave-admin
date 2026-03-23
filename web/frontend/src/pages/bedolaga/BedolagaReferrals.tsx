@@ -91,7 +91,8 @@ function getNodeRadius(referrals: number): number {
   return 10
 }
 
-const CAMPAIGN_COLOR = { fill: '#f472b6', border: '#f9a8d4', glow: 'rgba(244,114,182,0.3)' }
+// Campaign color (for future use)
+// const CAMPAIGN_COLOR = { fill: '#f472b6', border: '#f9a8d4', glow: 'rgba(244,114,182,0.3)' }
 
 // ── Layout ──
 
@@ -111,67 +112,100 @@ function layoutGraph(data: NetworkGraphData): { items: LayoutItem[]; edges: { x1
   const items: LayoutItem[] = []
   const posMap = new Map<string, { x: number; y: number }>()
 
-  // Place users in a spiral/grid layout
   const users = data.users || []
-  const campaigns = data.campaigns || []
 
-  // Sort: most referrals first
-  const sorted = [...users].sort((a, b) => b.direct_referrals - a.direct_referrals)
+  // Build parent→children map
+  const childrenMap = new Map<number, NetworkUserNode[]>()
+  const userMap = new Map<number, NetworkUserNode>()
+  const hasParent = new Set<number>()
 
-  // Spiral layout
-  const spacing = 90
-  sorted.forEach((u, i) => {
-    const angle = i * 0.8
-    const radius = spacing + i * 12
-    const x = Math.cos(angle) * radius
-    const y = Math.sin(angle) * radius
-    const nodeId = `user-${u.id}`
-    const r = getNodeRadius(u.direct_referrals)
-    const color = getNodeColor(u)
+  for (const u of users) {
+    userMap.set(u.id, u)
+    if (u.referrer_id) {
+      hasParent.add(u.id)
+      const siblings = childrenMap.get(u.referrer_id) || []
+      siblings.push(u)
+      childrenMap.set(u.referrer_id, siblings)
+    }
+  }
 
-    items.push({
-      id: nodeId, x, y, r, color,
-      label: u.display_name || u.username || `#${u.id}`,
-      count: u.direct_referrals,
-      type: 'user',
-      rawId: u.id,
-    })
-    posMap.set(nodeId, { x, y })
-  })
+  // Find roots: users who have referrals but no parent (top referrers)
+  const roots = users
+    .filter((u) => u.direct_referrals > 0 && !hasParent.has(u.id))
+    .sort((a, b) => b.direct_referrals - a.direct_referrals)
 
-  // Place campaigns
-  campaigns.forEach((c, i) => {
-    const angle = (i / Math.max(1, campaigns.length)) * Math.PI * 2
-    const radius = 50
-    const x = Math.cos(angle) * radius
-    const y = Math.sin(angle) * radius
-    const nodeId = `campaign-${c.id}`
-    const r = Math.min(24, 14 + c.direct_users * 0.5)
+  if (roots.length === 0) return { items: [], edges: [] }
 
-    items.push({
-      id: nodeId, x, y, r, color: CAMPAIGN_COLOR,
-      label: c.name,
-      count: c.direct_users,
-      type: 'campaign',
-      rawId: c.id,
-    })
-    posMap.set(nodeId, { x, y })
-  })
+  // BFS tree layout — each root gets its own tree, placed side by side
+  const X_GAP = 100
+  const Y_GAP = 110
+  let globalOffsetX = 0
+
+  for (const root of roots) {
+    // Calculate subtree width first
+    const subtreeWidth = calcSubtreeWidth(root.id, childrenMap, X_GAP)
+
+    // BFS layout for this tree
+    interface QItem { user: NetworkUserNode; depth: number; xCenter: number }
+    const queue: QItem[] = [{ user: root, depth: 0, xCenter: globalOffsetX + subtreeWidth / 2 }]
+
+    while (queue.length > 0) {
+      const { user: u, depth, xCenter } = queue.shift()!
+      const nodeId = `user-${u.id}`
+      const r = getNodeRadius(u.direct_referrals)
+      const color = getNodeColor(u)
+
+      const x = xCenter
+      const y = depth * Y_GAP
+
+      items.push({
+        id: nodeId, x, y, r, color,
+        label: u.display_name || u.username || `#${u.id}`,
+        count: u.direct_referrals,
+        type: 'user',
+        rawId: u.id,
+      })
+      posMap.set(nodeId, { x, y })
+
+      // Layout children centered under this node
+      const children = childrenMap.get(u.id) || []
+      if (children.length > 0) {
+        const childWidths = children.map((c) => calcSubtreeWidth(c.id, childrenMap, X_GAP))
+        const totalChildWidth = childWidths.reduce((a, b) => a + b, 0)
+        let childX = xCenter - totalChildWidth / 2
+
+        children.forEach((child, i) => {
+          const cw = childWidths[i]
+          queue.push({ user: child, depth: depth + 1, xCenter: childX + cw / 2 })
+          childX += cw
+        })
+      }
+    }
+
+    globalOffsetX += subtreeWidth + X_GAP * 2
+  }
 
   // Build edges
-  const edgeLines = (data.edges || []).map((e) => {
+  const edgeLines: { x1: number; y1: number; x2: number; y2: number; color: string; type: string }[] = []
+  for (const e of (data.edges || [])) {
     const src = posMap.get(e.source)
     const tgt = posMap.get(e.target)
-    if (!src || !tgt) return null
-    return {
-      x1: src.x, y1: src.y,
-      x2: tgt.x, y2: tgt.y,
+    if (!src || !tgt) continue
+    edgeLines.push({
+      x1: src.x, y1: src.y, x2: tgt.x, y2: tgt.y,
       color: e.type === 'campaign' ? '#f472b6' : '#4b5563',
       type: e.type,
-    }
-  }).filter(Boolean) as { x1: number; y1: number; x2: number; y2: number; color: string; type: string }[]
+    })
+  }
 
   return { items, edges: edgeLines }
+}
+
+function calcSubtreeWidth(userId: number, childrenMap: Map<number, NetworkUserNode[]>, gap: number): number {
+  const children = childrenMap.get(userId) || []
+  if (children.length === 0) return gap
+  const childWidths = children.map((c) => calcSubtreeWidth(c.id, childrenMap, gap))
+  return childWidths.reduce((a, b) => a + b, 0)
 }
 
 // ── Legend ──
