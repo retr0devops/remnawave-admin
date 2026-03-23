@@ -138,53 +138,47 @@ function layoutGraph(data: NetworkGraphData): { items: LayoutItem[]; edges: { x1
 
   if (roots.length === 0) return { items: [], edges: [] }
 
-  // BFS tree layout — each root gets its own tree, placed side by side
-  const X_GAP = 100
-  const Y_GAP = 110
-  let globalOffsetX = 0
+  // Radial layout — children placed in a circle around parent
+  const placed = new Set<number>()
 
+  function placeNode(u: NetworkUserNode, cx: number, cy: number) {
+    if (placed.has(u.id)) return
+    placed.add(u.id)
+
+    const nodeId = `user-${u.id}`
+    const r = getNodeRadius(u.direct_referrals)
+    const color = getNodeColor(u)
+
+    items.push({
+      id: nodeId, x: cx, y: cy, r, color,
+      label: u.display_name || u.username || `#${u.id}`,
+      count: u.direct_referrals,
+      type: 'user',
+      rawId: u.id,
+    })
+    posMap.set(nodeId, { x: cx, y: cy })
+
+    const children = childrenMap.get(u.id) || []
+    if (children.length === 0) return
+
+    // Radius of the circle around this node — scales with number of children
+    const orbitRadius = Math.max(80, children.length * 22)
+
+    children.forEach((child, i) => {
+      const angle = (i / children.length) * Math.PI * 2 - Math.PI / 2
+      const childX = cx + Math.cos(angle) * orbitRadius
+      const childY = cy + Math.sin(angle) * orbitRadius
+      placeNode(child, childX, childY)
+    })
+  }
+
+  // Place each root tree, spaced apart
+  let offsetX = 0
   for (const root of roots) {
-    // Calculate subtree width first
-    const subtreeWidth = calcSubtreeWidth(root.id, childrenMap, X_GAP)
-
-    // BFS layout for this tree
-    interface QItem { user: NetworkUserNode; depth: number; xCenter: number }
-    const queue: QItem[] = [{ user: root, depth: 0, xCenter: globalOffsetX + subtreeWidth / 2 }]
-
-    while (queue.length > 0) {
-      const { user: u, depth, xCenter } = queue.shift()!
-      const nodeId = `user-${u.id}`
-      const r = getNodeRadius(u.direct_referrals)
-      const color = getNodeColor(u)
-
-      const x = xCenter
-      const y = depth * Y_GAP
-
-      items.push({
-        id: nodeId, x, y, r, color,
-        label: u.display_name || u.username || `#${u.id}`,
-        count: u.direct_referrals,
-        type: 'user',
-        rawId: u.id,
-      })
-      posMap.set(nodeId, { x, y })
-
-      // Layout children centered under this node
-      const children = childrenMap.get(u.id) || []
-      if (children.length > 0) {
-        const childWidths = children.map((c) => calcSubtreeWidth(c.id, childrenMap, X_GAP))
-        const totalChildWidth = childWidths.reduce((a, b) => a + b, 0)
-        let childX = xCenter - totalChildWidth / 2
-
-        children.forEach((child, i) => {
-          const cw = childWidths[i]
-          queue.push({ user: child, depth: depth + 1, xCenter: childX + cw / 2 })
-          childX += cw
-        })
-      }
-    }
-
-    globalOffsetX += subtreeWidth + X_GAP * 2
+    const childCount = childrenMap.get(root.id)?.length ?? 0
+    const treeRadius = Math.max(120, childCount * 25)
+    placeNode(root, offsetX, 0)
+    offsetX += treeRadius * 2 + 150
   }
 
   // Build edges
@@ -201,13 +195,6 @@ function layoutGraph(data: NetworkGraphData): { items: LayoutItem[]; edges: { x1
   }
 
   return { items, edges: edgeLines }
-}
-
-function calcSubtreeWidth(userId: number, childrenMap: Map<number, NetworkUserNode[]>, gap: number): number {
-  const children = childrenMap.get(userId) || []
-  if (children.length === 0) return gap
-  const childWidths = children.map((c) => calcSubtreeWidth(c.id, childrenMap, gap))
-  return childWidths.reduce((a, b) => a + b, 0)
 }
 
 // ── Legend ──
