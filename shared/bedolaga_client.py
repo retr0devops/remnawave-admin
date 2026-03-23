@@ -181,6 +181,25 @@ class BedolagaClient:
     async def delete_campaign(self, campaign_id: int) -> dict:
         return await self._delete(f"/campaigns/{campaign_id}")
 
+    # ── Partners ──
+
+    async def list_partners(self, limit: int = 20, offset: int = 0, **filters) -> dict:
+        params = {"limit": limit, "offset": offset}
+        params.update({k: v for k, v in filters.items() if v is not None})
+        return await self._get("/partners/referrers", params=params)
+
+    async def get_partner(self, user_id: int) -> dict:
+        return await self._get(f"/partners/referrers/{user_id}")
+
+    async def update_partner_commission(self, user_id: int, data: dict) -> dict:
+        return await self._patch(f"/partners/referrers/{user_id}/commission", json=data)
+
+    async def get_partner_global_stats(self) -> dict:
+        return await self._get("/partners/stats")
+
+    async def get_partner_top_referrers(self) -> dict:
+        return await self._get("/partners/stats/top-referrers")
+
     # ── Broadcasts (bulk messages) ──
 
     async def list_broadcasts(self, limit: int = 20, offset: int = 0, **filters) -> dict:

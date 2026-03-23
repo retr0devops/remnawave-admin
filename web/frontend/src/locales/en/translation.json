@@ -3451,7 +3451,21 @@
       "cancelMailingText": "Cancel mailing \"{{subject}}\"?",
       "cancelMailing": "Cancel",
       "mailingCancelled": "Mailing cancelled",
-      "mailingCancelError": "Failed to cancel mailing"
+      "mailingCancelError": "Failed to cancel mailing",
+      "partners": "Partners",
+      "noPartners": "No partners found",
+      "monthEarned": "This month",
+      "totalEarned": "Total",
+      "bonusType": "Bonus type",
+      "registrations": "Registrations",
+      "tariff": "Tariff",
+      "campaignDesc": "Advertising campaign with deep-link parameter",
+      "broadcastDesc": "Mass broadcast to target audience",
+      "targetActive": "Active subscriptions",
+      "targetTrial": "Trial",
+      "targetNoSub": "No subscription",
+      "targetExpired": "Expired",
+      "targetExpiring": "Expiring"
     },
     "referrals": {
       "title": "Referral Network",

@@ -3451,7 +3451,21 @@
       "cancelMailingText": "Отменить рассылку «{{subject}}»?",
       "cancelMailing": "Отменить",
       "mailingCancelled": "Рассылка отменена",
-      "mailingCancelError": "Ошибка отмены рассылки"
+      "mailingCancelError": "Ошибка отмены рассылки",
+      "partners": "Партнёры",
+      "noPartners": "Партнёров не найдено",
+      "monthEarned": "За месяц",
+      "totalEarned": "Всего",
+      "bonusType": "Тип бонуса",
+      "registrations": "Регистраций",
+      "tariff": "Тариф",
+      "campaignDesc": "Рекламная кампания с deep-link параметром",
+      "broadcastDesc": "Массовая рассылка по аудитории",
+      "targetActive": "Активные подписки",
+      "targetTrial": "Триал",
+      "targetNoSub": "Без подписки",
+      "targetExpired": "Истёкшие",
+      "targetExpiring": "Истекающие"
     },
     "referrals": {
       "title": "Реферальная сеть",

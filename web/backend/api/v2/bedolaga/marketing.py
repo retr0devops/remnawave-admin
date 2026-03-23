@@ -157,3 +157,58 @@ async def stop_broadcast(
         ip_address=get_client_ip(request),
     )
     return result
+
+
+# ── Partners ──
+
+@router.get("/partners")
+async def list_partners(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    admin: AdminUser = Depends(require_permission("bedolaga_marketing", "view")),
+):
+    """Список партнёров-рефереров."""
+    return await proxy_request(lambda: bedolaga_client.list_partners(limit=limit, offset=offset))
+
+
+@router.get("/partners/stats")
+async def get_partner_stats(
+    admin: AdminUser = Depends(require_permission("bedolaga_marketing", "view")),
+):
+    """Глобальная статистика партнёрской программы."""
+    return await proxy_request(bedolaga_client.get_partner_global_stats)
+
+
+@router.get("/partners/top")
+async def get_top_referrers(
+    admin: AdminUser = Depends(require_permission("bedolaga_marketing", "view")),
+):
+    """Топ-рефереры."""
+    return await proxy_request(bedolaga_client.get_partner_top_referrers)
+
+
+@router.get("/partners/{user_id}")
+async def get_partner_detail(
+    user_id: int = Path(...),
+    admin: AdminUser = Depends(require_permission("bedolaga_marketing", "view")),
+):
+    """Детали партнёра с его рефералами."""
+    return await proxy_request(lambda: bedolaga_client.get_partner(user_id))
+
+
+@router.patch("/partners/{user_id}/commission")
+async def update_partner_commission(
+    request: Request,
+    user_id: int = Path(...),
+    admin: AdminUser = Depends(require_permission("bedolaga_marketing", "edit")),
+):
+    """Изменить комиссию партнёра."""
+    body = await request.json()
+    result = await proxy_request(lambda: bedolaga_client.update_partner_commission(user_id, body))
+    await write_audit_log(
+        admin_id=admin.account_id, admin_username=admin.username,
+        action="bedolaga.partner.commission", resource="bedolaga_marketing",
+        resource_id=str(user_id), details=json.dumps(body),
+        ip_address=get_client_ip(request),
+    )
+    return result
