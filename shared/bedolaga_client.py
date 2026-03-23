@@ -115,6 +115,9 @@ class BedolagaClient:
     async def add_devices(self, sub_id: int, data: dict) -> dict:
         return await self._post(f"/subscriptions/{sub_id}/devices", json=data)
 
+    async def reset_devices(self, sub_id: int) -> dict:
+        return await self._post(f"/subscriptions/{sub_id}/reset-devices")
+
     # ── Transactions ──
 
     async def list_transactions(self, limit: int = 20, offset: int = 0, **filters) -> dict:

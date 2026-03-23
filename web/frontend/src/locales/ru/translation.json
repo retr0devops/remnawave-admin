@@ -3323,7 +3323,10 @@
       "firstName": "Имя",
       "lastName": "Фамилия",
       "userUpdated": "Данные обновлены",
-      "userUpdateError": "Ошибка обновления"
+      "userUpdateError": "Ошибка обновления",
+      "resetDevices": "Сбросить",
+      "devicesReset": "Устройства сброшены",
+      "customDays": "Или введите вручную"
     },
     "trial": "Пробных",
     "conversions": "Конверсий",

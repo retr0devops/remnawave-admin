@@ -3323,7 +3323,10 @@
       "firstName": "First name",
       "lastName": "Last name",
       "userUpdated": "Customer updated",
-      "userUpdateError": "Update failed"
+      "userUpdateError": "Update failed",
+      "resetDevices": "Reset",
+      "devicesReset": "Devices reset",
+      "customDays": "Or enter manually"
     },
     "trial": "Trial",
     "conversions": "Conversions",

@@ -200,6 +200,16 @@ export default function BedolagaCustomerDetail() {
     onError: () => toast.error(t('common.error')),
   })
 
+  const resetDevicesMutation = useMutation({
+    mutationFn: () =>
+      client.post(`/bedolaga/customers/subscriptions/${user?.subscription?.id}/reset-devices`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bedolaga-customer', id] })
+      toast.success(t('bedolaga.customerDetail.devicesReset'))
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+
   const updateMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
       client.patch(`/bedolaga/customers/${id}`, data),
@@ -544,7 +554,19 @@ export default function BedolagaCustomerDetail() {
                   {/* Devices */}
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-dark-300 flex items-center gap-1.5"><Smartphone className="w-3.5 h-3.5" />{t('bedolaga.customerDetail.devices')}</span>
-                    <span>{sub.device_limit ?? '—'}</span>
+                    <div className="flex items-center gap-2">
+                      <span>{sub.device_count ?? 0} / {sub.device_limit ?? '—'}</span>
+                      {sub.device_count > 0 && (
+                        <Button
+                          variant="ghost" size="sm"
+                          className="h-6 px-2 text-[10px] text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                          onClick={() => resetDevicesMutation.mutate()}
+                          disabled={resetDevicesMutation.isPending}
+                        >
+                          {resetDevicesMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : t('bedolaga.customerDetail.resetDevices')}
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -676,14 +698,31 @@ export default function BedolagaCustomerDetail() {
             <DialogTitle>{t('bedolaga.customerDetail.extendSubscription')}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-dark-200">{t('bedolaga.customerDetail.extendDesc')}</p>
-          <div className="py-2">
-            <label className="text-xs text-dark-200 mb-1 block">{t('bedolaga.customerDetail.days')}</label>
-            <input
-              type="number" min="1"
-              value={extendDays}
-              onChange={(e) => setExtendDays(e.target.value)}
-              className="w-full h-10 px-3 rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-            />
+          <div className="space-y-3 py-2">
+            {/* Preset buttons */}
+            <div className="flex flex-wrap gap-2">
+              {[7, 14, 30, 60, 90, 180, 365].map((d) => (
+                <Button
+                  key={d}
+                  variant={extendDays === String(d) ? 'default' : 'secondary'}
+                  size="sm"
+                  className="h-8 px-3 text-xs"
+                  onClick={() => setExtendDays(String(d))}
+                >
+                  {d}d
+                </Button>
+              ))}
+            </div>
+            {/* Custom input */}
+            <div>
+              <label className="text-xs text-dark-200 mb-1 block">{t('bedolaga.customerDetail.customDays')}</label>
+              <input
+                type="number" min="1"
+                value={extendDays}
+                onChange={(e) => setExtendDays(e.target.value)}
+                className="w-full h-10 px-3 rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setExtendDialog(false)}>{t('common.cancel')}</Button>
