@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -30,6 +30,7 @@ import {
   Pencil,
   Users,
   Share2,
+  Network,
 } from 'lucide-react'
 import client from '@/api/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -45,6 +46,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+
+const ReferralGraph = lazy(() => import('./ReferralGraph'))
 
 // ── Helpers ──
 
@@ -141,6 +144,7 @@ export default function BedolagaCustomerDetail() {
   const [copiedField, setCopiedField] = useState<string | null>(null)
   const [editDialog, setEditDialog] = useState(false)
   const [editForm, setEditForm] = useState({ first_name: '', last_name: '', username: '' })
+  const [showGraph, setShowGraph] = useState(false)
 
   // ── Queries ──
 
@@ -177,6 +181,13 @@ export default function BedolagaCustomerDetail() {
     queryFn: () => client.get(`/bedolaga/customers/${id}/referral-stats`).then((r) => r.data),
     enabled: !!id,
     staleTime: 30_000,
+  })
+
+  const { data: refTreeData } = useQuery({
+    queryKey: ['bedolaga-customer-referral-tree', id],
+    queryFn: () => client.get(`/bedolaga/customers/${id}/referral-tree?depth=3`).then((r) => r.data),
+    enabled: !!id && showGraph,
+    staleTime: 60_000,
   })
 
   const { data: remnawaveUser } = useQuery({
@@ -677,9 +688,22 @@ export default function BedolagaCustomerDetail() {
       {(referrals.length > 0 || user.referral_code || (refStats as any).total_invited > 0) && (
         <div className="space-y-4">
           {/* Referral stats */}
-          <div className="flex items-center gap-2 mt-2">
-            <Share2 className="w-5 h-5 text-pink-400" />
-            <h2 className="text-sm font-semibold">{t('bedolaga.customerDetail.referralProgram')}</h2>
+          <div className="flex items-center justify-between mt-2">
+            <div className="flex items-center gap-2">
+              <Share2 className="w-5 h-5 text-pink-400" />
+              <h2 className="text-sm font-semibold">{t('bedolaga.customerDetail.referralProgram')}</h2>
+            </div>
+            {referrals.length > 0 && (
+              <Button
+                variant={showGraph ? 'default' : 'secondary'}
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => setShowGraph(!showGraph)}
+              >
+                <Network className="w-4 h-4" />
+                <span className="hidden sm:inline">{t('bedolaga.customerDetail.refGraph')}</span>
+              </Button>
+            )}
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -717,6 +741,26 @@ export default function BedolagaCustomerDetail() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Referral graph */}
+          {showGraph && (
+            <Suspense fallback={
+              <div className="h-[400px] rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] flex items-center justify-center">
+                <RefreshCw className="w-6 h-6 text-dark-400 animate-spin" />
+              </div>
+            }>
+              {refTreeData ? (
+                <ReferralGraph
+                  rootUser={{ id: user.id, username: user.username, first_name: user.first_name, status: user.status, balance_rubles: user.balance_rubles }}
+                  tree={Array.isArray(refTreeData?.children) ? refTreeData.children : Array.isArray(refTreeData) ? refTreeData : []}
+                />
+              ) : (
+                <div className="h-[400px] rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] flex items-center justify-center">
+                  <RefreshCw className="w-6 h-6 text-dark-400 animate-spin" />
+                </div>
+              )}
+            </Suspense>
+          )}
 
           {/* Referral list */}
           {referrals.length > 0 && (

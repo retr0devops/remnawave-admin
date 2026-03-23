@@ -126,6 +126,9 @@ class BedolagaClient:
     async def get_user_referral_stats(self, user_id: int) -> dict:
         return await self._get(f"/users/{user_id}/referral-stats")
 
+    async def get_user_referral_tree(self, user_id: int, depth: int = 3) -> dict:
+        return await self._get(f"/users/{user_id}/referral-tree", params={"depth": depth})
+
     # ── Transactions ──
 
     async def list_transactions(self, limit: int = 20, offset: int = 0, **filters) -> dict:

@@ -228,6 +228,16 @@ async def get_user_referrals(
     return await proxy_request(lambda: bedolaga_client.get_user_referrals(user_id, limit=limit, offset=offset))
 
 
+@router.get("/{user_id}/referral-tree")
+async def get_user_referral_tree(
+    user_id: int = Path(...),
+    depth: int = Query(3, ge=1, le=5),
+    admin: AdminUser = Depends(require_permission("bedolaga_customers", "view")),
+):
+    """Дерево рефералов (рекурсивное, до N уровней)."""
+    return await proxy_request(lambda: bedolaga_client.get_user_referral_tree(user_id, depth=depth))
+
+
 @router.get("/{user_id}/referral-stats")
 async def get_user_referral_stats(
     user_id: int = Path(...),
