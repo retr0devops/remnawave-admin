@@ -147,7 +147,7 @@ export default function RunScriptDialog({ open, onOpenChange, script }: RunScrip
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-base">
             {t('fleet.scripts.run')}: {script?.display_name}

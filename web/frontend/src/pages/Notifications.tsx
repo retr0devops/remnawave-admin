@@ -575,7 +575,7 @@ function AlertRuleDialog({ rule, open, onClose }: { rule: AlertRule | null; open
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="w-[95vw] max-w-lg">
         <DialogHeader>
           <DialogTitle>{isEdit ? t('notifications.alerts.editRule') : t('notifications.alerts.createRule')}</DialogTitle>
         </DialogHeader>

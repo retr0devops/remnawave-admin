@@ -479,7 +479,7 @@ function TrafficBlock({ user, trafficPercent }: { user: UserDetailData; trafficP
 
             {/* Summary cards */}
             <Separator />
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="bg-[var(--glass-bg)] rounded-lg p-3 text-center">
                 <p className="text-base font-bold text-white">{formatBytes(user.used_traffic_bytes)}</p>
                 <p className="text-[11px] text-dark-200">{t('userDetail.traffic.currentPeriod')}</p>
@@ -2625,7 +2625,7 @@ export default function UserDetail() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {(['none', 'partial', 'full'] as const).map(mode => (
                 <button
                   key={mode}

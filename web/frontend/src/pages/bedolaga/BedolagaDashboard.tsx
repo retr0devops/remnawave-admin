@@ -181,7 +181,7 @@ export default function BedolagaDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="grid grid-cols-3 gap-3 mb-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
                 <div className="text-center p-3 rounded-lg bg-[var(--glass-bg)]">
                   <p className="text-xs text-dark-300 mb-1">{t('bedolaga.periods.today')}</p>
                   <p className="text-lg font-bold text-emerald-400">{txns?.today?.income_rubles?.toLocaleString() ?? 0} ₽</p>
@@ -228,7 +228,7 @@ export default function BedolagaDashboard() {
             </CardHeader>
             <CardContent className="pt-0 space-y-3">
               {/* New users row */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="text-center p-2.5 rounded-lg bg-[var(--glass-bg)]">
                   <p className="text-xl font-bold">{full.users?.new_today ?? '—'}</p>
                   <p className="text-[10px] text-dark-300">{t('bedolaga.periods.today')}</p>
@@ -289,7 +289,7 @@ export default function BedolagaDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-0">
-                <div className="grid grid-cols-3 gap-3 mb-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
                   <div className="text-center p-2.5 rounded-lg bg-[var(--glass-bg)]">
                     <p className="text-lg font-bold">{refs.active_referrers ?? refs.users_with_referrals ?? 0}</p>
                     <p className="text-[10px] text-dark-300">{t('bedolaga.referrals.totalReferrers')}</p>

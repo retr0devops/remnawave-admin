@@ -518,7 +518,7 @@ export default function Login() {
             }}
           />
 
-          <CardHeader className="items-center pt-8 pb-2 px-8">
+          <CardHeader className="items-center pt-6 sm:pt-8 pb-2 px-4 sm:px-8">
             <div className="flex flex-col items-center gap-4 mb-2">
               <div
                 className="w-16 h-16 rounded-2xl flex items-center justify-center relative login-logo-glow"
@@ -543,7 +543,7 @@ export default function Login() {
             </div>
           </CardHeader>
 
-          <CardContent className="px-8 pb-8 pt-4">
+          <CardContent className="px-4 sm:px-8 pb-6 sm:pb-8 pt-4">
             {/* Separator */}
             <div className="flex items-center gap-3 mb-6">
               <div className="flex-1 h-px bg-[var(--glass-border)]" />

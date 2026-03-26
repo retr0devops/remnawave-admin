@@ -764,7 +764,7 @@ export default function Resources({ embedded }: { embedded?: boolean } = {}) {
 
       {/* Edit Template Dialog */}
       <Dialog open={editTemplateDialogOpen} onOpenChange={setEditTemplateDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="w-[95vw] max-w-3xl">
           <DialogHeader>
             <DialogTitle>{t('resources.templates.editTitle')}</DialogTitle>
           </DialogHeader>
@@ -815,7 +815,7 @@ export default function Resources({ embedded }: { embedded?: boolean } = {}) {
 
       {/* Create Snippet Dialog */}
       <Dialog open={snippetDialogOpen} onOpenChange={setSnippetDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="w-[95vw] max-w-3xl">
           <DialogHeader>
             <DialogTitle>{t('resources.snippets.createTitle')}</DialogTitle>
             <DialogDescription>{t('resources.snippets.createDescription')}</DialogDescription>
@@ -858,7 +858,7 @@ export default function Resources({ embedded }: { embedded?: boolean } = {}) {
 
       {/* Edit Snippet Dialog */}
       <Dialog open={editSnippetDialogOpen} onOpenChange={setEditSnippetDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="w-[95vw] max-w-3xl">
           <DialogHeader>
             <DialogTitle>{t('resources.snippets.editTitle')}</DialogTitle>
           </DialogHeader>
@@ -910,7 +910,7 @@ export default function Resources({ embedded }: { embedded?: boolean } = {}) {
 
       {/* View Computed Config Dialog */}
       <Dialog open={viewConfigDialogOpen} onOpenChange={setViewConfigDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="w-[95vw] max-w-3xl">
           <DialogHeader>
             <DialogTitle>
               {t('resources.profiles.viewTitle')}: {viewingProfile?.name}

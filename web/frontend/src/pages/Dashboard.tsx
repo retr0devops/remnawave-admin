@@ -1128,7 +1128,7 @@ function UpdateCheckerCard() {
         <Separator className="bg-[var(--glass-bg-hover)]" />
 
         {/* Dependencies */}
-        <div className="grid grid-cols-2 gap-2 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
           {deps?.python && (
             <div className="flex items-center justify-between bg-[var(--glass-bg)] rounded px-3 py-1.5">
               <span className="text-dark-300">Python</span>
@@ -2058,7 +2058,7 @@ export default function Dashboard() {
               <CardTitle className="text-sm md:text-base">{t('dashboard.quickActions')}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[
                   { icon: Users, label: t('dashboard.users'), href: '/users', perm: 'users' },
                   { icon: Server, label: t('dashboard.nodes'), href: '/nodes', perm: 'nodes' },

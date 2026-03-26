@@ -463,7 +463,7 @@ export function RuleConstructor({ open, onOpenChange, editRule }: RuleConstructo
               <p className="text-xs text-dark-400 mt-1">
                 {t('automations.constructor.triggerHint')}
               </p>
-              <div className="grid grid-cols-3 gap-2 mt-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
                 {TRIGGER_TYPES.map((tt) => {
                   const Icon = TRIGGER_ICONS[tt.value] || Zap
                   return (

@@ -215,7 +215,7 @@ export default function ImportScriptDialog({ open, onClose }: ImportScriptDialog
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t('fleet.scripts.importFromGithub')}</DialogTitle>
           <DialogDescription>
@@ -401,7 +401,7 @@ export default function ImportScriptDialog({ open, onClose }: ImportScriptDialog
                   ))}
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <Label className="text-xs">{t('fleet.scripts.categoryForAll')}</Label>
                     <select

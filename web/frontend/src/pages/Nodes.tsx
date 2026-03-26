@@ -511,7 +511,7 @@ function AgentTokenModal({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="w-[95vw] max-w-lg">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Key className="w-5 h-5 text-primary-400" />
@@ -829,7 +829,7 @@ function NodeCard({
 
       <CardContent className="pt-4">
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-2 md:gap-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-4 mb-4">
           <div className="text-center p-2 md:p-3 bg-[var(--glass-bg)] rounded-lg">
             <div className="flex items-center justify-center gap-1 text-dark-200 mb-1">
               <Users className="w-3.5 h-3.5" />
@@ -900,7 +900,7 @@ function NodeSkeleton() {
         </div>
       </CardHeader>
       <CardContent className="pt-4">
-        <div className="grid grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           {[1, 2, 3].map((i) => (
             <div key={i} className="p-3 bg-[var(--glass-bg)] rounded-lg">
               <div className="h-3 w-12 bg-[var(--glass-bg)] rounded mx-auto mb-2" />
