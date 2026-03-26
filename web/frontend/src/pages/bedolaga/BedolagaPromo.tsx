@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import { useFormatters } from '@/lib/useFormatters'
 import {
   Search,
   RefreshCw,
@@ -191,10 +192,7 @@ export default function BedolagaPromo() {
     setTimeout(() => setCopiedCode(null), 1500)
   }
 
-  const formatDate = (d?: string) => {
-    if (!d) return '—'
-    return new Date(d).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })
-  }
+  const { formatDateShort: formatDate } = useFormatters()
 
   const formatRubles = (kopeks?: number) => {
     if (!kopeks) return '0 ₽'

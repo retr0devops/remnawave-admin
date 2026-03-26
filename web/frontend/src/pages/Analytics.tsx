@@ -1047,14 +1047,7 @@ function SharedHwidsCard() {
     toast.success(t('common.copied', { defaultValue: 'Copied' }))
   }
 
-  const formatDate = (d: string | null) => {
-    if (!d) return '-'
-    try {
-      return new Date(d).toLocaleDateString()
-    } catch {
-      return d
-    }
-  }
+  const { formatDateShort: formatDate } = useFormatters()
 
   return (
     <Card className="animate-fade-in-up" style={{ animationDelay: '0.2s' }}>

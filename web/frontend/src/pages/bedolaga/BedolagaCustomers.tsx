@@ -135,10 +135,7 @@ function trafficPercent(sub?: BedolagaUser['subscription']): number | null {
   return Math.min(100, (sub.traffic_used_gb / sub.traffic_limit_gb) * 100)
 }
 
-function formatDate(d?: string): string {
-  if (!d) return '—'
-  return new Date(d).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })
-}
+import { formatDateShortUtil as formatDate } from '@/lib/useFormatters'
 
 // ── Component ──
 

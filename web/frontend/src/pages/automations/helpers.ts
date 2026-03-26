@@ -318,31 +318,9 @@ export function resultLabel(result: string): string {
   return t(`automations.results.${result}`, { defaultValue: result })
 }
 
-// ── Date formatting ─────────────────────────────────────────
+// ── Date formatting (centralized) ────────────────────────────
 
-function getLocale(): string {
-  return i18n.language === 'en' ? 'en-US' : 'ru-RU'
-}
-
-export function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString(getLocale(), {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
-}
-
-export function formatDateTime(dateStr: string | null): string {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleString(getLocale(), {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
+export { formatDateShortUtil as formatDate, formatDateUtil as formatDateTime } from '@/lib/useFormatters'
 
 // ── Constants for forms ─────────────────────────────────────
 

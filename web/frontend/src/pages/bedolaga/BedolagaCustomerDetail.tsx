@@ -86,15 +86,8 @@ function isOnline(d?: string): boolean {
   return Date.now() - new Date(d).getTime() < 5 * 60_000
 }
 
-function formatDate(d?: string): string {
-  if (!d) return '—'
-  return new Date(d).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
-}
-
-function formatDateShort(d?: string): string {
-  if (!d) return '—'
-  return new Date(d).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })
-}
+// Centralized locale-aware formatters (used outside components)
+import { formatDateUtil as formatDate, formatDateShortUtil as formatDateShort } from '@/lib/useFormatters'
 
 function daysUntil(d?: string): number | null {
   if (!d) return null

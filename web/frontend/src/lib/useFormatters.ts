@@ -1,5 +1,40 @@
 import { useTranslation } from 'react-i18next'
 import { useCallback } from 'react'
+import i18n from '../i18n'
+
+/**
+ * Get current locale string based on i18n language.
+ */
+export function getLocale(): string {
+  return i18n.language === 'ru' ? 'ru-RU' : 'en-US'
+}
+
+/**
+ * Standalone date formatter — for use outside React components (helpers, utils).
+ * For React components, prefer the `useFormatters` hook.
+ */
+export function formatDateUtil(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleString(getLocale(), {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+/**
+ * Standalone short date formatter — for use outside React components.
+ */
+export function formatDateShortUtil(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString(getLocale())
+}
 
 /**
  * Returns locale-aware formatting functions for dates, numbers, bytes, and time intervals.
@@ -9,8 +44,11 @@ export function useFormatters() {
   const locale = i18n.language === 'ru' ? 'ru-RU' : 'en-US'
 
   const formatDate = useCallback(
-    (dateStr: string) => {
-      return new Date(dateStr).toLocaleString(locale, {
+    (dateStr: string | null | undefined) => {
+      if (!dateStr) return '—'
+      const d = new Date(dateStr)
+      if (isNaN(d.getTime())) return '—'
+      return d.toLocaleString(locale, {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
@@ -22,8 +60,11 @@ export function useFormatters() {
   )
 
   const formatDateShort = useCallback(
-    (dateStr: string) => {
-      return new Date(dateStr).toLocaleDateString(locale)
+    (dateStr: string | null | undefined) => {
+      if (!dateStr) return '—'
+      const d = new Date(dateStr)
+      if (isNaN(d.getTime())) return '—'
+      return d.toLocaleDateString(locale)
     },
     [locale],
   )

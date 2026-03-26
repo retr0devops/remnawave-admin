@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import { useFormatters } from '@/lib/useFormatters'
 import {
   RefreshCw,
   ChevronLeft,
@@ -199,8 +200,8 @@ export default function BedolagaMarketing() {
     createBroadcastMut.mutate({ target: broadcastForm.target, message_text: broadcastForm.message_text })
   }
 
-  const formatDate = (d?: string) => d ? new Date(d).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'
-  const formatRubles = (kopeks?: number) => kopeks ? `${(kopeks / 100).toLocaleString('ru-RU')} ₽` : '0 ₽'
+  const { formatDateShort: formatDate, locale } = useFormatters()
+  const formatRubles = (kopeks?: number) => kopeks ? `${(kopeks / 100).toLocaleString(locale)} ₽` : '0 ₽'
   const refetchAll = () => { cRefetch(); bRefetch(); pRefetch() }
   const cSaving = createCampaignMut.isPending || updateCampaignMut.isPending
 

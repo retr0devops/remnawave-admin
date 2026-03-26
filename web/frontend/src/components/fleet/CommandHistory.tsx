@@ -68,20 +68,8 @@ function formatDuration(ms: number | null): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-function formatTimestamp(iso: string): string {
-  try {
-    const d = new Date(iso)
-    return d.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
-  } catch {
-    return iso
-  }
-}
+// Use centralized formatter
+import { formatDateUtil as formatTimestamp } from '@/lib/useFormatters'
 
 export default function CommandHistory() {
   const { t } = useTranslation()
