@@ -75,12 +75,11 @@ async def _violation_worker():
     import time
     _stats["worker_started_at"] = datetime.utcnow().isoformat()
 
-    # Read configurable parameters
-    drain_interval = config_service.get("violation_drain_interval", _VIOLATION_DRAIN_INTERVAL)
-    chunk_size = config_service.get("violation_chunk_size", _VIOLATION_CHUNK_SIZE)
-
     while True:
         try:
+            # Read configurable parameters each cycle (hot-reload from settings)
+            drain_interval = config_service.get("violation_drain_interval", _VIOLATION_DRAIN_INTERVAL)
+            chunk_size = config_service.get("violation_chunk_size", _VIOLATION_CHUNK_SIZE)
             await asyncio.sleep(drain_interval)
             if not _pending_violation_users:
                 continue
@@ -677,15 +676,18 @@ async def _check_single_user(user_uuid: str, min_score: float, sem: asyncio.Sema
                         bl_matches = await db_service.check_hwids_against_blacklist(user_hwids)
                         if bl_matches:
                             from web.backend.api.v2.violations import _handle_blacklisted_hwid_users
-                            affected = await db_service.find_users_by_hwid(bl_matches[0]["hwid"])
-                            user_entry = [u for u in affected if str(u.get("user_uuid")) == user_uuid]
-                            if user_entry:
+                            # Process ALL matched HWIDs (prioritize block over alert)
+                            bl_matches.sort(key=lambda m: 0 if m["action"] == "block" else 1)
+                            for match in bl_matches:
+                                user_entry = [{"user_uuid": user_uuid, "username": None}]
                                 await _handle_blacklisted_hwid_users(
-                                    bl_matches[0]["hwid"],
-                                    bl_matches[0]["action"],
-                                    bl_matches[0].get("reason"),
+                                    match["hwid"],
+                                    match["action"],
+                                    match.get("reason"),
                                     user_entry,
                                 )
+                                if match["action"] == "block":
+                                    break  # Already blocked, no need to process more
             except Exception as e:
                 logger.debug("HWID blacklist check failed for %s: %s", user_uuid, e)
 
@@ -884,8 +886,19 @@ async def collector_health():
 
 
 @router.get("/stats")
-async def collector_stats():
-    """Collector pipeline metrics — queue depth, processing rates, bottleneck indicators."""
+async def collector_stats(request: Request):
+    """Collector pipeline metrics — queue depth, processing rates, bottleneck indicators.
+
+    Requires admin JWT token (not agent token) for security.
+    """
+    # Verify admin auth (collector endpoints skip middleware, so check manually)
+    from web.backend.core.security import decode_token
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+    payload = decode_token(auth_header[7:], token_type="access")
+    if not payload:
+        return JSONResponse(status_code=401, content={"detail": "Invalid or expired token"})
     queue_size = len(_pending_violation_users)
     cooldown_size = len(_violation_check_cooldown)
     bg_tasks = len({t for t in _background_tasks if not t.done()})

@@ -778,15 +778,15 @@ async def forgot_password(request: Request, data: ForgotPasswordRequest):
             settings = get_web_settings()
             secret_path = config_service.get("secret_path", "")
             prefix = f"/{secret_path}" if secret_path else ""
-            # Use Origin header or Referer to determine the base URL
-            origin = request.headers.get("origin") or request.headers.get("referer", "")
-            if origin:
-                # Strip path from origin/referer to get base
-                from urllib.parse import urlparse
-                parsed = urlparse(origin)
-                base_url = f"{parsed.scheme}://{parsed.netloc}{prefix}"
-            else:
-                base_url = prefix or ""
+            # Use configured public URL (never trust Origin/Referer headers)
+            import os
+            public_url = os.getenv("APP_PUBLIC_URL", "").rstrip("/")
+            if not public_url:
+                # Fallback: construct from CORS origins if available
+                cors = os.getenv("WEB_CORS_ORIGINS", "")
+                if cors:
+                    public_url = cors.split(",")[0].strip().rstrip("/")
+            base_url = f"{public_url}{prefix}" if public_url else prefix
 
             reset_url = f"{base_url}/reset-password?token={token}"
 

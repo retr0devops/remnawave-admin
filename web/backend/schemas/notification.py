@@ -118,6 +118,7 @@ class AlertRuleBase(BaseModel):
     title_template: str = "Alert: {rule_name}"
     body_template: str = "{metric}: {value} ({operator} {threshold})"
     topic_type: Optional[str] = None  # Telegram topic override (users, nodes, service, violations, errors, hwid)
+    max_offline_minutes: int = 0  # Ignore nodes offline longer than N minutes (0 = disabled)
 
 
 class AlertRuleCreate(AlertRuleBase):
@@ -141,6 +142,7 @@ class AlertRuleUpdate(BaseModel):
     title_template: Optional[str] = None
     body_template: Optional[str] = None
     topic_type: Optional[str] = None
+    max_offline_minutes: Optional[int] = None
 
 
 class AlertRuleItem(AlertRuleBase):

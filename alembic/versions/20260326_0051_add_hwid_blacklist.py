@@ -24,10 +24,7 @@ def upgrade() -> None:
             created_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
-    op.execute("""
-        CREATE INDEX IF NOT EXISTS idx_hwid_blacklist_hwid
-        ON hwid_blacklist (hwid)
-    """)
+    # UNIQUE constraint already creates a B-tree index on hwid — no extra index needed
 
 
 def downgrade() -> None:

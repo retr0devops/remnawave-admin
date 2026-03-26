@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Path, Query, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from typing import Optional
 from datetime import datetime, timedelta
+from pydantic import BaseModel, Field
 
 from web.backend.api.deps import get_current_admin, get_db, AdminUser, require_permission, get_client_ip
 from web.backend.core.errors import api_error, E
@@ -761,27 +762,25 @@ async def list_hwid_blacklist(
     return {"items": items, "total": len(items)}
 
 
+class HwidBlacklistRequest(BaseModel):
+    hwid: str = Field(..., min_length=1, max_length=255)
+    action: str = Field("alert", pattern=r"^(alert|block)$")
+    reason: Optional[str] = None
+
+
 @router.post("/hwid-blacklist")
 @limiter.limit(RATE_MUTATIONS)
 async def add_hwid_blacklist(
     request: Request,
-    data: dict,
+    data: HwidBlacklistRequest,
     admin: AdminUser = Depends(require_permission("violations", "create")),
 ):
-    """Add HWID to blacklist.
-
-    Body: { hwid: str, action: "alert"|"block", reason?: str }
-    """
+    """Add HWID to blacklist."""
     from shared.database import db_service
 
-    hwid = data.get("hwid", "").strip()
-    action = data.get("action", "alert")
-    reason = data.get("reason")
-
-    if not hwid:
-        raise api_error(400, E.FORBIDDEN, "HWID is required")
-    if action not in ("alert", "block"):
-        raise api_error(400, E.FORBIDDEN, "Action must be 'alert' or 'block'")
+    hwid = data.hwid.strip()
+    action = data.action
+    reason = data.reason
 
     entry = await db_service.add_hwid_to_blacklist(
         hwid=hwid,
