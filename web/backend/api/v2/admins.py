@@ -43,6 +43,7 @@ def _account_to_response(account: dict) -> AdminAccountResponse:
     return AdminAccountResponse(
         id=account["id"],
         username=account["username"],
+        email=account.get("email"),
         telegram_id=account.get("telegram_id"),
         role_id=account.get("role_id"),
         role_name=account.get("role_name"),
@@ -123,6 +124,7 @@ async def create_admin(
         max_hosts=data.max_hosts,
         is_generated_password=bool(pw_hash),
         created_by=admin.account_id,
+        email=data.email,
     )
     if not account:
         raise api_error(500, E.ADMIN_CREATE_FAILED)
@@ -186,6 +188,8 @@ async def update_admin(
         fields["max_hosts"] = data.max_hosts
     if data.is_active is not None:
         fields["is_active"] = data.is_active
+    if data.email is not None:
+        fields["email"] = data.email or None
     if data.password is not None:
         is_strong, error = validate_password_strength(data.password)
         if not is_strong:

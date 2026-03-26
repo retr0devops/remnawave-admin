@@ -12,6 +12,30 @@ import bcrypt as _bcrypt
 
 logger = logging.getLogger(__name__)
 
+# ── Cyrillic → Latin confusable map ─────────────────────────────
+# Characters that look identical in Cyrillic and Latin but have different
+# Unicode codepoints. This causes login failures when the user types the
+# password in a different keyboard layout than during registration.
+_CYRILLIC_TO_LATIN = {
+    "А": "A", "В": "B", "С": "C", "Е": "E", "Н": "H", "К": "K",
+    "М": "M", "О": "O", "Р": "P", "Т": "T", "Х": "X",
+    "а": "a", "с": "c", "е": "e", "о": "o", "р": "p", "х": "x",
+    "у": "y",
+}
+_CONFUSABLE_RE = re.compile("[" + re.escape("".join(_CYRILLIC_TO_LATIN)) + "]")
+
+
+def _normalize_password(password: str) -> str:
+    """Replace Cyrillic look-alike characters with Latin equivalents.
+
+    Prevents login failures caused by keyboard layout mismatch —
+    e.g. Cyrillic 'С' (U+0421) vs Latin 'C' (U+0043).
+    """
+    if not _CONFUSABLE_RE.search(password):
+        return password
+    return "".join(_CYRILLIC_TO_LATIN.get(ch, ch) for ch in password)
+
+
 # ── Password policy ──────────────────────────────────────────────
 
 MIN_PASSWORD_LENGTH = 8
@@ -34,10 +58,15 @@ def validate_password_strength(password: str) -> Tuple[bool, str]:
     - At least one lowercase letter
     - At least one digit
     - At least one special character
+    - No Cyrillic characters (prevents login issues with keyboard layout mismatch)
 
     Returns:
         (is_valid, error_message)
     """
+    # Check for Cyrillic characters (common source of login bugs)
+    if re.search(r"[\u0400-\u04FF]", password):
+        return False, "Password contains Cyrillic characters. Please use Latin letters only to avoid login issues."
+
     if len(password) < MIN_PASSWORD_LENGTH:
         return False, f"Password must be at least {MIN_PASSWORD_LENGTH} characters"
 
@@ -81,17 +110,27 @@ def generate_password(length: int = GENERATED_PASSWORD_LENGTH) -> str:
 
 
 def hash_password(password: str) -> str:
-    """Hash a password using bcrypt (12 rounds)."""
+    """Hash a password using bcrypt (12 rounds).
+
+    Normalizes Cyrillic look-alike characters to Latin before hashing
+    to prevent keyboard-layout-dependent login failures.
+    """
+    normalized = _normalize_password(password)
     return _bcrypt.hashpw(
-        password.encode("utf-8"), _bcrypt.gensalt(rounds=12)
+        normalized.encode("utf-8"), _bcrypt.gensalt(rounds=12)
     ).decode("utf-8")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """Verify a password against a bcrypt hash."""
+    """Verify a password against a bcrypt hash.
+
+    Normalizes Cyrillic look-alike characters to Latin before verification
+    to match the normalization applied during hashing.
+    """
+    normalized = _normalize_password(password)
     try:
         return _bcrypt.checkpw(
-            password.encode("utf-8"), password_hash.encode("utf-8")
+            normalized.encode("utf-8"), password_hash.encode("utf-8")
         )
     except Exception as e:
         logger.error("Password verification error: %s", e)

@@ -128,6 +128,10 @@ def verify_admin_password(username: str, password: str) -> bool:
 
     stored = settings.admin_password
 
+    # Normalize Cyrillic look-alikes to Latin (same as hash_password)
+    from web.backend.core.admin_credentials import _normalize_password
+    password = _normalize_password(password)
+
     # If stored password is a bcrypt hash, verify with bcrypt
     if stored.startswith("$2b$") or stored.startswith("$2a$"):
         try:
@@ -215,6 +219,22 @@ def create_temp_2fa_token(subject: str, auth_method: str = "password") -> str:
         "iat": int(datetime.now(timezone.utc).timestamp()),
         "type": "2fa_temp",
         "auth_method": auth_method,
+    }
+
+    return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+
+
+def create_password_reset_token(admin_id: int, username: str) -> str:
+    """Create a short-lived JWT for password reset (30 minutes, type='password_reset')."""
+    settings = get_web_settings()
+    expire = datetime.now(timezone.utc) + timedelta(minutes=30)
+
+    payload = {
+        "sub": str(admin_id),
+        "username": username,
+        "exp": int(expire.timestamp()),
+        "iat": int(datetime.now(timezone.utc).timestamp()),
+        "type": "password_reset",
     }
 
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)

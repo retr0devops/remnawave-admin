@@ -14,9 +14,10 @@ const routerBasename = rawSecretPath.startsWith('/') ? rawSecretPath : `/${rawSe
 // Layout
 import Layout from './components/layout/Layout'
 
-// Login and Dashboard loaded eagerly (critical path)
+// Login, Dashboard, ResetPassword loaded eagerly (critical path)
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
+import ResetPassword from './pages/ResetPassword'
 
 // Lazy-loaded pages
 const Users = lazy(() => import('./pages/Users'))
@@ -111,6 +112,7 @@ export default function App() {
           <Routes>
             {/* Public routes */}
             <Route path="/login" element={<Login />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
 
             {/* Protected routes */}
             <Route

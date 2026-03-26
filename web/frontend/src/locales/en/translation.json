@@ -193,6 +193,7 @@
     "title": "Panel Login",
     "subtitle": "Administration control panel",
     "loginButton": "Log in",
+    "forgotPassword": "Forgot password?",
     "loggingIn": "Logging in...",
     "telegram": "Log in with Telegram",
     "password": "Log in with password",
@@ -213,7 +214,8 @@
       "lower": "Lowercase (a-z)",
       "upper": "Uppercase (A-Z)",
       "digit": "Digit (0-9)",
-      "special": "Special character"
+      "special": "Special character",
+      "noCyrillic": "Cyrillic characters detected — switch keyboard to EN layout"
     },
     "authorizedOnly": "For authorized administrators only",
     "passwordRequirements": "Create an admin account to get started",
@@ -3035,6 +3037,8 @@
     "PASSWORD_UPDATE_FAILED": "Failed to update password",
     "INVALID_USERNAME": "Invalid username",
     "FORBIDDEN": "Access denied",
+    "EMAIL_NOT_CONFIGURED": "Email sending is not configured",
+    "RESET_TOKEN_INVALID": "Invalid or expired password reset link",
 
     "USERNAME_EXISTS": "Username already exists",
     "CANNOT_MODIFY_SELF": "Cannot modify your own account",
@@ -3489,5 +3493,23 @@
     "description": "The page you're looking for doesn't exist or has been moved.",
     "goHome": "Go to Dashboard",
     "goBack": "Go Back"
+  },
+  "resetPassword": {
+    "title": "Reset Password",
+    "description": "Enter the email associated with your account. We'll send a password reset link.",
+    "emailPlaceholder": "admin@example.com",
+    "sendLink": "Send Reset Link",
+    "backToLogin": "Back to Login",
+    "emailSent": "Email Sent",
+    "emailSentDescription": "If this email is associated with an account, you'll receive a password reset link. Check your inbox, including spam folder.",
+    "newPasswordTitle": "New Password",
+    "newPasswordDescription": "Create a new password for your account",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm password",
+    "resetButton": "Reset Password",
+    "success": "Password Changed",
+    "successDescription": "Your password has been reset successfully. You can now log in with your new password.",
+    "goToLogin": "Go to Login",
+    "error": "An error occurred. Please try again later."
   }
 }

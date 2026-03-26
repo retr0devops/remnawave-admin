@@ -27,6 +27,8 @@ function generatePassword(length = 16): string {
   return chars.join('')
 }
 
+const CYRILLIC_RE = /[\u0400-\u04FF]/
+
 function getPasswordStrength(password: string) {
   const checks = {
     length: password.length >= 8,
@@ -34,13 +36,15 @@ function getPasswordStrength(password: string) {
     upper: /[A-Z]/.test(password),
     digit: /\d/.test(password),
     special: /[!@#$%^&*_+\-=\[\]{}|;:',.<>?/\\~`"()]/.test(password),
+    noCyrillic: !CYRILLIC_RE.test(password),
   }
-  const passedCount = Object.values(checks).filter(Boolean).length
+  const { noCyrillic, ...coreChecks } = checks
+  const passedCount = Object.values(coreChecks).filter(Boolean).length
   let score = passedCount * 16
   if (password.length >= 12) score += 10
   if (password.length >= 16) score += 10
   score = Math.min(100, score)
-  const allChecks = Object.values(checks).every(Boolean)
+  const allChecks = Object.values(checks).every(Boolean) && checks.noCyrillic
   return { score, checks, allChecks }
 }
 
@@ -180,6 +184,11 @@ export function ForcePasswordChange() {
                   style={{ width: `${strength.score}%`, backgroundColor: barColor }}
                 />
               </div>
+            )}
+            {newPassword && !strength.checks.noCyrillic && (
+              <p className="text-[11px] text-amber-400 mt-1">
+                {t('login.passwordChecks.noCyrillic')}
+              </p>
             )}
           </div>
 

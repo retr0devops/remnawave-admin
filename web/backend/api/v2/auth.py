@@ -20,6 +20,7 @@ from web.backend.core.security import (
     create_access_token,
     create_refresh_token,
     create_temp_2fa_token,
+    create_password_reset_token,
     decode_token,
 )
 from web.backend.core.token_blacklist import token_blacklist
@@ -40,6 +41,8 @@ from web.backend.schemas.auth import (
     RegisterRequest,
     SetupStatusResponse,
     ChangePasswordRequest,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
     TokenResponse,
     LoginResponse,
     TotpSetupResponse,
@@ -648,12 +651,15 @@ async def get_current_user(admin: AdminUser = Depends(get_current_admin)):
     """
     # Check if password is auto-generated (needs changing)
     password_is_generated = False
+    admin_email = None
     if admin.auth_method == "password" and admin.account_id:
         try:
             from web.backend.core.rbac import get_admin_account_by_id
             account = await get_admin_account_by_id(admin.account_id)
-            if account and account.get("is_generated_password"):
-                password_is_generated = True
+            if account:
+                if account.get("is_generated_password"):
+                    password_is_generated = True
+                admin_email = account.get("email")
         except Exception as e:
             logger.debug("Non-critical: %s", e)
 
@@ -666,6 +672,7 @@ async def get_current_user(admin: AdminUser = Depends(get_current_admin)):
     return AdminInfo(
         telegram_id=admin.telegram_id,
         username=admin.username,
+        email=admin_email,
         role=admin.role,
         role_id=admin.role_id,
         auth_method=admin.auth_method,
@@ -743,3 +750,116 @@ async def logout(
             token_blacklist.add(token, float(payload["exp"]))
             logger.info("Token blacklisted for user '%s'", admin.username)
     return SuccessResponse(message="Logged out successfully")
+
+
+@router.post("/forgot-password", response_model=SuccessResponse)
+@limiter.limit("3/minute")
+async def forgot_password(request: Request, data: ForgotPasswordRequest):
+    """
+    Request password reset. Sends an email with a reset link if:
+    - The email matches an admin account
+    - Email sending is configured (SMTP relay or built-in mail server)
+
+    Always returns success to prevent email enumeration.
+    """
+    client_ip = get_client_ip(request)
+    logger.info("Password reset requested for email '%s' from %s", data.email, client_ip)
+
+    # Always return success — do actual work in background
+    try:
+        from web.backend.core.rbac import get_admin_account_by_email
+        account = await get_admin_account_by_email(data.email)
+
+        if account and account.get("is_active", True) and account.get("password_hash"):
+            # Generate reset token
+            token = create_password_reset_token(account["id"], account["username"])
+
+            # Build reset URL
+            settings = get_web_settings()
+            secret_path = config_service.get("secret_path", "")
+            prefix = f"/{secret_path}" if secret_path else ""
+            # Use Origin header or Referer to determine the base URL
+            origin = request.headers.get("origin") or request.headers.get("referer", "")
+            if origin:
+                # Strip path from origin/referer to get base
+                from urllib.parse import urlparse
+                parsed = urlparse(origin)
+                base_url = f"{parsed.scheme}://{parsed.netloc}{prefix}"
+            else:
+                base_url = prefix or ""
+
+            reset_url = f"{base_url}/reset-password?token={token}"
+
+            # Send email
+            from web.backend.core.notification_service import send_email
+            await send_email(
+                to_email=data.email,
+                title="Password Reset",
+                body=(
+                    f"A password reset was requested for your account '{account['username']}'.\n\n"
+                    f"Click the link below to reset your password:\n{reset_url}\n\n"
+                    f"This link expires in 30 minutes.\n"
+                    f"If you did not request this, ignore this email."
+                ),
+                severity="warning",
+                link=reset_url,
+            )
+            logger.info("Password reset email sent to '%s' for user '%s'", data.email, account["username"])
+        else:
+            logger.info("Password reset: no matching account for email '%s'", data.email)
+    except Exception as e:
+        logger.error("Password reset email failed: %s", e)
+
+    return SuccessResponse(message="If this email is associated with an account, a reset link has been sent.")
+
+
+@router.post("/reset-password", response_model=SuccessResponse)
+@limiter.limit("5/minute")
+async def reset_password(request: Request, data: ResetPasswordRequest):
+    """
+    Reset password using a token from the reset email.
+    Validates the token, checks it hasn't been used, and sets the new password.
+    """
+    # Decode and validate token
+    payload = decode_token(data.token, token_type="password_reset")
+    if not payload:
+        raise api_error(400, E.RESET_TOKEN_INVALID, "Invalid or expired reset token")
+
+    # Check token hasn't been used
+    if token_blacklist.is_blacklisted(data.token):
+        raise api_error(400, E.RESET_TOKEN_INVALID, "This reset link has already been used")
+
+    admin_id = int(payload["sub"])
+
+    # Validate new password
+    from web.backend.core.admin_credentials import validate_password_strength, hash_password
+    is_strong, strength_error = validate_password_strength(data.new_password)
+    if not is_strong:
+        raise api_error(400, E.INVALID_PASSWORD, strength_error)
+
+    # Find admin account
+    from web.backend.core.rbac import get_admin_account_by_id, update_admin_account
+    account = await get_admin_account_by_id(admin_id)
+    if not account:
+        raise api_error(400, E.RESET_TOKEN_INVALID, "Invalid reset token")
+
+    if not account.get("is_active", True):
+        raise api_error(403, E.ACCOUNT_DISABLED, "Account is disabled")
+
+    # Update password
+    new_hash = hash_password(data.new_password)
+    updated = await update_admin_account(
+        admin_id,
+        password_hash=new_hash,
+        is_generated_password=False,
+    )
+    if not updated:
+        raise api_error(500, E.PASSWORD_UPDATE_FAILED)
+
+    # Blacklist the token to prevent reuse
+    token_blacklist.add(data.token, float(payload["exp"]))
+
+    client_ip = get_client_ip(request)
+    logger.info("Password reset completed for user '%s' (id=%d) from %s", account["username"], admin_id, client_ip)
+
+    return SuccessResponse(message="Password has been reset successfully. You can now log in.")

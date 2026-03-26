@@ -73,8 +73,12 @@ interface PasswordStrength {
     upper: boolean
     digit: boolean
     special: boolean
+    noCyrillic: boolean
   }
 }
+
+// Cyrillic characters that look identical to Latin (С/C, А/A, Е/E, etc.)
+const CYRILLIC_RE = /[\u0400-\u04FF]/
 
 function getPasswordStrength(password: string): PasswordStrength {
   const checks = {
@@ -83,9 +87,11 @@ function getPasswordStrength(password: string): PasswordStrength {
     upper: /[A-Z]/.test(password),
     digit: /\d/.test(password),
     special: /[!@#$%^&*_+\-=\[\]{}|;:',.<>?/\\~`"()]/.test(password),
+    noCyrillic: !CYRILLIC_RE.test(password),
   }
 
-  const passedCount = Object.values(checks).filter(Boolean).length
+  const { noCyrillic, ...coreChecks } = checks
+  const passedCount = Object.values(coreChecks).filter(Boolean).length
   let score = passedCount * 16 // max 80
 
   // Bonus for length
@@ -129,6 +135,14 @@ function PasswordStrengthBar({ password }: { password: string }) {
           {strength.label ? t(strength.label) : ''}
         </span>
       </div>
+
+      {/* Cyrillic warning */}
+      {!strength.checks.noCyrillic && (
+        <div className="text-[11px] flex items-center gap-1 text-amber-400 animate-fade-in">
+          <X className="w-3 h-3 shrink-0" />
+          {t('login.passwordChecks.noCyrillic')}
+        </div>
+      )}
 
       {/* Requirement checks */}
       <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
@@ -900,6 +914,15 @@ export default function Login() {
                           <KeyRound className="w-4 h-4 mr-2" />
                           {t('login.loginButton')}
                         </Button>
+                        <div className="text-center mt-2">
+                          <button
+                            type="button"
+                            onClick={() => navigate('/reset-password')}
+                            className="text-xs text-dark-300 hover:text-teal-400 transition-colors duration-200"
+                          >
+                            {t('login.forgotPassword')}
+                          </button>
+                        </div>
                       </form>
                     ) : (
                       /* Telegram Login Widget */

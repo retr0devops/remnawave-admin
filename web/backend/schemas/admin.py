@@ -42,6 +42,7 @@ class RoleResponse(RoleBase):
 
 class AdminAccountBase(BaseModel):
     username: str = Field(..., min_length=1, max_length=100)
+    email: Optional[str] = Field(None, max_length=255)
     telegram_id: Optional[int] = None
     role_id: int
     max_users: Optional[int] = Field(None, ge=0)
@@ -56,6 +57,7 @@ class AdminAccountCreate(AdminAccountBase):
 
 class AdminAccountUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=1, max_length=100)
+    email: Optional[str] = Field(None, max_length=255)
     telegram_id: Optional[int] = None
     role_id: Optional[int] = None
     max_users: Optional[int] = Field(None, ge=0)
@@ -69,6 +71,7 @@ class AdminAccountUpdate(BaseModel):
 class AdminAccountResponse(BaseModel):
     id: int
     username: str
+    email: Optional[str] = None
     telegram_id: Optional[int] = None
     role_id: Optional[int] = None
     role_name: Optional[str] = None

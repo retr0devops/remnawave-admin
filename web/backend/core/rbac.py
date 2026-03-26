@@ -97,6 +97,28 @@ async def get_admin_account_by_username(username: str) -> Optional[dict]:
         return None
 
 
+async def get_admin_account_by_email(email: str) -> Optional[dict]:
+    """Fetch admin account by email (case-insensitive)."""
+    try:
+        from shared.database import db_service
+        if not db_service.is_connected:
+            return None
+        async with db_service.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT a.*, r.name as role_name, r.display_name as role_display_name
+                FROM admin_accounts a
+                LEFT JOIN admin_roles r ON r.id = a.role_id
+                WHERE LOWER(a.email) = LOWER($1)
+                """,
+                email,
+            )
+            return dict(row) if row else None
+    except Exception as e:
+        logger.error("get_admin_account_by_email failed: %s", e)
+        return None
+
+
 async def get_admin_account_by_telegram_id(telegram_id: int) -> Optional[dict]:
     """Fetch admin account by Telegram ID."""
     try:
@@ -173,6 +195,7 @@ async def create_admin_account(
     max_hosts: Optional[int] = None,
     is_generated_password: bool = False,
     created_by: Optional[int] = None,
+    email: Optional[str] = None,
 ) -> Optional[dict]:
     """Create a new admin account. Returns the created record."""
     try:
@@ -185,13 +208,13 @@ async def create_admin_account(
                 INSERT INTO admin_accounts
                     (username, password_hash, telegram_id, role_id,
                      max_users, max_traffic_gb, max_nodes, max_hosts,
-                     is_generated_password, created_by)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                     is_generated_password, created_by, email)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 RETURNING *
                 """,
                 username, password_hash, telegram_id, role_id,
                 max_users, max_traffic_gb, max_nodes, max_hosts,
-                is_generated_password, created_by,
+                is_generated_password, created_by, email,
             )
             return dict(row) if row else None
     except Exception as e:
@@ -212,6 +235,7 @@ async def update_admin_account(
         "max_users", "max_traffic_gb", "max_nodes", "max_hosts",
         "is_active", "is_generated_password",
         "totp_secret", "totp_enabled", "backup_codes",
+        "email",
     }
     filtered = {k: v for k, v in fields.items() if k in allowed}
     if not filtered:

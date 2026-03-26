@@ -369,6 +369,8 @@ function generatePassword(length = 16): string {
   return chars.join('')
 }
 
+const CYRILLIC_RE = /[\u0400-\u04FF]/
+
 interface PasswordStrengthResult {
   score: number
   level: 'none' | 'weak' | 'fair' | 'good' | 'strong'
@@ -380,6 +382,7 @@ interface PasswordStrengthResult {
     upper: boolean
     digit: boolean
     special: boolean
+    noCyrillic: boolean
   }
 }
 
@@ -390,8 +393,10 @@ function getPasswordStrength(password: string): PasswordStrengthResult {
     upper: /[A-Z]/.test(password),
     digit: /\d/.test(password),
     special: /[!@#$%^&*_+\-=\[\]{}|;:',.<>?/\\~`"()]/.test(password),
+    noCyrillic: !CYRILLIC_RE.test(password),
   }
-  const passedCount = Object.values(checks).filter(Boolean).length
+  const { noCyrillic, ...coreChecks } = checks
+  const passedCount = Object.values(coreChecks).filter(Boolean).length
   let score = passedCount * 16
   if (password.length >= 12) score += 10
   if (password.length >= 16) score += 10
@@ -430,6 +435,12 @@ function SettingsPasswordStrengthBar({ password }: { password: string }) {
           {strength.label !== 'none' ? t(`settings.password.strength.${strength.label}`) : ''}
         </span>
       </div>
+      {!strength.checks.noCyrillic && (
+        <div className="text-[11px] flex items-center gap-1 text-amber-400">
+          <X className="w-3 h-3 shrink-0" />
+          {t('login.passwordChecks.noCyrillic')}
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
         {[
           { ok: strength.checks.length, key: 'length', text: t('settings.password.checks.length') },

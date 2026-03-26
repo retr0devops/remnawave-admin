@@ -257,4 +257,26 @@ export const authApi = {
   logout: async (): Promise<void> => {
     await client.post('/auth/logout')
   },
+
+  /**
+   * Request password reset email
+   */
+  forgotPassword: async (email: string): Promise<void> => {
+    try {
+      await client.post('/auth/forgot-password', { email })
+    } catch (error) {
+      throw new Error(getErrorMessage(error))
+    }
+  },
+
+  /**
+   * Reset password using token from email
+   */
+  resetPassword: async (token: string, newPassword: string): Promise<void> => {
+    try {
+      await client.post('/auth/reset-password', { token, new_password: newPassword })
+    } catch (error) {
+      throw new Error(getErrorMessage(error))
+    }
+  },
 }

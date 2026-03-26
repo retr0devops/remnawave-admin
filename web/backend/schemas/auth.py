@@ -96,8 +96,22 @@ class AdminInfo(BaseModel):
 
     telegram_id: Optional[int] = None
     username: str
+    email: Optional[str] = None
     role: str
     role_id: Optional[int] = None
     auth_method: str = "telegram"
     password_is_generated: bool = False
     permissions: List[PermissionEntry] = []
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Request to send password reset email."""
+
+    email: str = Field(..., min_length=5, max_length=255)
+
+
+class ResetPasswordRequest(BaseModel):
+    """Request to reset password using token from email."""
+
+    token: str = Field(..., min_length=10)
+    new_password: str = Field(..., min_length=8, max_length=200)
