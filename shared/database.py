@@ -5341,6 +5341,116 @@ class DatabaseService:
             logger.error("Error getting shared HWIDs for user %s: %s", user_uuid, e, exc_info=True)
             return []
 
+    # ==================== Blocked IPs ====================
+
+    async def get_blocked_ips(
+        self, limit: int = 50, offset: int = 0, include_expired: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Get blocked IPs with pagination."""
+        if not self.is_connected:
+            return []
+        try:
+            where = "" if include_expired else "WHERE expires_at IS NULL OR expires_at > NOW()"
+            async with self.acquire() as conn:
+                rows = await conn.fetch(
+                    f"SELECT * FROM blocked_ips {where} ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+                    limit, offset,
+                )
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error("Error getting blocked IPs: %s", e)
+            return []
+
+    async def get_blocked_ips_count(self, include_expired: bool = False) -> int:
+        """Get count of blocked IPs."""
+        if not self.is_connected:
+            return 0
+        try:
+            where = "" if include_expired else "WHERE expires_at IS NULL OR expires_at > NOW()"
+            async with self.acquire() as conn:
+                return await conn.fetchval(f"SELECT COUNT(*) FROM blocked_ips {where}") or 0
+        except Exception as e:
+            logger.error("Error getting blocked IPs count: %s", e)
+            return 0
+
+    async def add_blocked_ip(
+        self,
+        ip_cidr: str,
+        reason: Optional[str] = None,
+        admin_id: Optional[int] = None,
+        admin_username: Optional[str] = None,
+        country_code: Optional[str] = None,
+        asn_org: Optional[str] = None,
+        expires_at=None,
+    ) -> Optional[Dict[str, Any]]:
+        """Add IP to blocklist. Returns created entry or None on duplicate."""
+        try:
+            async with self.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO blocked_ips (ip_cidr, reason, added_by_admin_id, added_by_username,
+                                             country_code, asn_org, expires_at)
+                    VALUES ($1::cidr, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (ip_cidr) DO NOTHING
+                    RETURNING *
+                    """,
+                    ip_cidr, reason, admin_id, admin_username,
+                    country_code, asn_org, expires_at,
+                )
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error("Error adding blocked IP %s: %s", ip_cidr, e)
+            return None
+
+    async def remove_blocked_ip(self, ip_id: int) -> bool:
+        """Remove blocked IP by id."""
+        try:
+            async with self.acquire() as conn:
+                result = await conn.execute("DELETE FROM blocked_ips WHERE id = $1", ip_id)
+                return "DELETE 1" in result
+        except Exception as e:
+            logger.error("Error removing blocked IP %d: %s", ip_id, e)
+            return False
+
+    async def remove_blocked_ip_by_cidr(self, ip_cidr: str) -> bool:
+        """Remove blocked IP by CIDR string."""
+        try:
+            async with self.acquire() as conn:
+                result = await conn.execute("DELETE FROM blocked_ips WHERE ip_cidr = $1::cidr", ip_cidr)
+                return "DELETE 1" in result
+        except Exception as e:
+            logger.error("Error removing blocked IP %s: %s", ip_cidr, e)
+            return False
+
+    async def get_all_active_blocked_ips(self) -> List[str]:
+        """Get all active blocked IPs as CIDR strings (for agent sync)."""
+        if not self.is_connected:
+            return []
+        try:
+            async with self.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT ip_cidr::text FROM blocked_ips WHERE expires_at IS NULL OR expires_at > NOW()"
+                )
+                return [r["ip_cidr"] for r in rows]
+        except Exception as e:
+            logger.error("Error getting active blocked IPs: %s", e)
+            return []
+
+    async def cleanup_expired_blocked_ips(self) -> int:
+        """Delete expired blocked IPs. Returns count deleted."""
+        try:
+            async with self.acquire() as conn:
+                result = await conn.execute(
+                    "DELETE FROM blocked_ips WHERE expires_at IS NOT NULL AND expires_at < NOW()"
+                )
+                count = int(result.split()[-1]) if result else 0
+                if count > 0:
+                    logger.info("Cleaned up %d expired blocked IPs", count)
+                return count
+        except Exception as e:
+            logger.error("Error cleaning up expired blocked IPs: %s", e)
+            return 0
+
 
 def _db_row_to_api_format(row) -> Dict[str, Any]:
     """
@@ -5532,117 +5642,6 @@ def _parse_timestamp(value: Any) -> Optional[datetime]:
                 hwid,
             )
             return [dict(r) for r in rows]
-
-
-    # ==================== Blocked IPs ====================
-
-    async def get_blocked_ips(
-        self, limit: int = 50, offset: int = 0, include_expired: bool = False,
-    ) -> List[Dict[str, Any]]:
-        """Get blocked IPs with pagination."""
-        if not self.is_connected:
-            return []
-        try:
-            where = "" if include_expired else "WHERE expires_at IS NULL OR expires_at > NOW()"
-            async with self.acquire() as conn:
-                rows = await conn.fetch(
-                    f"SELECT * FROM blocked_ips {where} ORDER BY created_at DESC LIMIT $1 OFFSET $2",
-                    limit, offset,
-                )
-                return [dict(r) for r in rows]
-        except Exception as e:
-            logger.error("Error getting blocked IPs: %s", e)
-            return []
-
-    async def get_blocked_ips_count(self, include_expired: bool = False) -> int:
-        """Get count of blocked IPs."""
-        if not self.is_connected:
-            return 0
-        try:
-            where = "" if include_expired else "WHERE expires_at IS NULL OR expires_at > NOW()"
-            async with self.acquire() as conn:
-                return await conn.fetchval(f"SELECT COUNT(*) FROM blocked_ips {where}") or 0
-        except Exception as e:
-            logger.error("Error getting blocked IPs count: %s", e)
-            return 0
-
-    async def add_blocked_ip(
-        self,
-        ip_cidr: str,
-        reason: Optional[str] = None,
-        admin_id: Optional[int] = None,
-        admin_username: Optional[str] = None,
-        country_code: Optional[str] = None,
-        asn_org: Optional[str] = None,
-        expires_at=None,
-    ) -> Optional[Dict[str, Any]]:
-        """Add IP to blocklist. Returns created entry or None on duplicate."""
-        try:
-            async with self.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO blocked_ips (ip_cidr, reason, added_by_admin_id, added_by_username,
-                                             country_code, asn_org, expires_at)
-                    VALUES ($1::cidr, $2, $3, $4, $5, $6, $7)
-                    ON CONFLICT (ip_cidr) DO NOTHING
-                    RETURNING *
-                    """,
-                    ip_cidr, reason, admin_id, admin_username,
-                    country_code, asn_org, expires_at,
-                )
-                return dict(row) if row else None
-        except Exception as e:
-            logger.error("Error adding blocked IP %s: %s", ip_cidr, e)
-            return None
-
-    async def remove_blocked_ip(self, ip_id: int) -> bool:
-        """Remove blocked IP by id."""
-        try:
-            async with self.acquire() as conn:
-                result = await conn.execute("DELETE FROM blocked_ips WHERE id = $1", ip_id)
-                return "DELETE 1" in result
-        except Exception as e:
-            logger.error("Error removing blocked IP %d: %s", ip_id, e)
-            return False
-
-    async def remove_blocked_ip_by_cidr(self, ip_cidr: str) -> bool:
-        """Remove blocked IP by CIDR string."""
-        try:
-            async with self.acquire() as conn:
-                result = await conn.execute("DELETE FROM blocked_ips WHERE ip_cidr = $1::cidr", ip_cidr)
-                return "DELETE 1" in result
-        except Exception as e:
-            logger.error("Error removing blocked IP %s: %s", ip_cidr, e)
-            return False
-
-    async def get_all_active_blocked_ips(self) -> List[str]:
-        """Get all active blocked IPs as CIDR strings (for agent sync)."""
-        if not self.is_connected:
-            return []
-        try:
-            async with self.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT ip_cidr::text FROM blocked_ips WHERE expires_at IS NULL OR expires_at > NOW()"
-                )
-                return [r["ip_cidr"] for r in rows]
-        except Exception as e:
-            logger.error("Error getting active blocked IPs: %s", e)
-            return []
-
-    async def cleanup_expired_blocked_ips(self) -> int:
-        """Delete expired blocked IPs. Returns count deleted."""
-        try:
-            async with self.acquire() as conn:
-                result = await conn.execute(
-                    "DELETE FROM blocked_ips WHERE expires_at IS NOT NULL AND expires_at < NOW()"
-                )
-                count = int(result.split()[-1]) if result else 0
-                if count > 0:
-                    logger.info("Cleaned up %d expired blocked IPs", count)
-                return count
-        except Exception as e:
-            logger.error("Error cleaning up expired blocked IPs: %s", e)
-            return 0
 
 
 # Global database service instance
