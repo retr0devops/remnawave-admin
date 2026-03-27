@@ -575,55 +575,6 @@
       "notSelected": "Не выбрано",
       "noSquadsAvailable": "Нет доступных сквадов"
     },
-    "blockedIPs": {
-      "title": "Заблокированные IP",
-      "addIP": "Добавить IP",
-      "bulkBlock": "Массовая блокировка",
-      "sync": "Синхронизировать",
-      "empty": "Нет заблокированных IP",
-      "forever": "Навсегда",
-      "pagination": "Стр. {{current}} / {{total}}",
-      "addSuccess": "IP заблокирован",
-      "addError": "Ошибка добавления IP",
-      "bulkSuccess": "IP заблокированы",
-      "bulkError": "Ошибка массовой блокировки",
-      "deleteSuccess": "Блокировка удалена",
-      "deleteError": "Ошибка удаления",
-      "syncSuccess": "Блоклист синхронизирован",
-      "syncError": "Ошибка синхронизации",
-      "columns": {
-        "ipCidr": "IP / CIDR",
-        "country": "Страна",
-        "asnProvider": "Провайдер",
-        "reason": "Причина",
-        "addedBy": "Добавил",
-        "created": "Дата",
-        "expires": "Истекает",
-        "actions": "Действия"
-      },
-      "addDialog": {
-        "title": "Добавить IP в блоклист",
-        "description": "Укажите IP-адрес или CIDR-подсеть для блокировки",
-        "ipCidr": "IP / CIDR",
-        "reason": "Причина",
-        "reasonPlaceholder": "Причина блокировки (необязательно)",
-        "duration": "Срок действия",
-        "submit": "Заблокировать"
-      },
-      "bulkDialog": {
-        "title": "Массовая блокировка",
-        "description": "Введите IP-адреса, по одному на строку",
-        "ips": "Список IP",
-        "ipsPlaceholder": "1.2.3.4\n10.0.0.0/24\n192.168.1.0/24",
-        "reason": "Причина",
-        "duration": "Срок действия",
-        "submit": "Заблокировать все"
-      },
-      "deleteDialog": {
-        "title": "Удалить блокировку",
-        "description": "Удалить блокировку для {{ip}}?"
-      }
-    },
     "violations": {
       "title": "Нарушения"
     },
@@ -1175,6 +1126,55 @@
       "created": "Хост создан",
       "saveError": "Ошибка сохранения",
       "createError": "Ошибка создания"
+    }
+  },
+  "blockedIPs": {
+    "title": "Заблокированные IP",
+    "addIP": "Добавить IP",
+    "bulkBlock": "Массовая блокировка",
+    "sync": "Синхронизировать",
+    "empty": "Нет заблокированных IP",
+    "forever": "Навсегда",
+    "pagination": "Стр. {{current}} / {{total}}",
+    "addSuccess": "IP заблокирован",
+    "addError": "Ошибка добавления IP",
+    "bulkSuccess": "IP заблокированы",
+    "bulkError": "Ошибка массовой блокировки",
+    "deleteSuccess": "Блокировка удалена",
+    "deleteError": "Ошибка удаления",
+    "syncSuccess": "Блоклист синхронизирован",
+    "syncError": "Ошибка синхронизации",
+    "columns": {
+      "ipCidr": "IP / CIDR",
+      "country": "Страна",
+      "asnProvider": "Провайдер",
+      "reason": "Причина",
+      "addedBy": "Добавил",
+      "created": "Дата",
+      "expires": "Истекает",
+      "actions": "Действия"
+    },
+    "addDialog": {
+      "title": "Добавить IP в блоклист",
+      "description": "Укажите IP-адрес или CIDR-подсеть для блокировки",
+      "ipCidr": "IP / CIDR",
+      "reason": "Причина",
+      "reasonPlaceholder": "Причина блокировки (необязательно)",
+      "duration": "Срок действия",
+      "submit": "Заблокировать"
+    },
+    "bulkDialog": {
+      "title": "Массовая блокировка",
+      "description": "Введите IP-адреса, по одному на строку",
+      "ips": "Список IP",
+      "ipsPlaceholder": "1.2.3.4\n10.0.0.0/24\n192.168.1.0/24",
+      "reason": "Причина",
+      "duration": "Срок действия",
+      "submit": "Заблокировать все"
+    },
+    "deleteDialog": {
+      "title": "Удалить блокировку",
+      "description": "Удалить блокировку для {{ip}}?"
     }
   },
   "violations": {

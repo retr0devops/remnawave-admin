@@ -575,55 +575,6 @@
       "notSelected": "Not selected",
       "noSquadsAvailable": "No squads available"
     },
-    "blockedIPs": {
-      "title": "Blocked IPs",
-      "addIP": "Add IP",
-      "bulkBlock": "Bulk Block",
-      "sync": "Sync",
-      "empty": "No blocked IPs",
-      "forever": "Permanent",
-      "pagination": "Page {{current}} / {{total}}",
-      "addSuccess": "IP blocked",
-      "addError": "Failed to add IP",
-      "bulkSuccess": "IPs blocked",
-      "bulkError": "Bulk block failed",
-      "deleteSuccess": "Block removed",
-      "deleteError": "Failed to remove block",
-      "syncSuccess": "Blocklist synced",
-      "syncError": "Sync failed",
-      "columns": {
-        "ipCidr": "IP / CIDR",
-        "country": "Country",
-        "asnProvider": "Provider",
-        "reason": "Reason",
-        "addedBy": "Added By",
-        "created": "Date",
-        "expires": "Expires",
-        "actions": "Actions"
-      },
-      "addDialog": {
-        "title": "Add IP to blocklist",
-        "description": "Enter an IP address or CIDR subnet to block",
-        "ipCidr": "IP / CIDR",
-        "reason": "Reason",
-        "reasonPlaceholder": "Reason for blocking (optional)",
-        "duration": "Duration",
-        "submit": "Block"
-      },
-      "bulkDialog": {
-        "title": "Bulk Block",
-        "description": "Enter IP addresses, one per line",
-        "ips": "IP List",
-        "ipsPlaceholder": "1.2.3.4\n10.0.0.0/24\n192.168.1.0/24",
-        "reason": "Reason",
-        "duration": "Duration",
-        "submit": "Block All"
-      },
-      "deleteDialog": {
-        "title": "Remove block",
-        "description": "Remove block for {{ip}}?"
-      }
-    },
     "violations": {
       "title": "Violations"
     },
@@ -1175,6 +1126,55 @@
       "created": "Host created",
       "saveError": "Save error",
       "createError": "Create error"
+    }
+  },
+  "blockedIPs": {
+    "title": "Blocked IPs",
+    "addIP": "Add IP",
+    "bulkBlock": "Bulk Block",
+    "sync": "Sync",
+    "empty": "No blocked IPs",
+    "forever": "Permanent",
+    "pagination": "Page {{current}} / {{total}}",
+    "addSuccess": "IP blocked",
+    "addError": "Failed to add IP",
+    "bulkSuccess": "IPs blocked",
+    "bulkError": "Bulk block failed",
+    "deleteSuccess": "Block removed",
+    "deleteError": "Failed to remove block",
+    "syncSuccess": "Blocklist synced",
+    "syncError": "Sync failed",
+    "columns": {
+      "ipCidr": "IP / CIDR",
+      "country": "Country",
+      "asnProvider": "Provider",
+      "reason": "Reason",
+      "addedBy": "Added By",
+      "created": "Date",
+      "expires": "Expires",
+      "actions": "Actions"
+    },
+    "addDialog": {
+      "title": "Add IP to blocklist",
+      "description": "Enter an IP address or CIDR subnet to block",
+      "ipCidr": "IP / CIDR",
+      "reason": "Reason",
+      "reasonPlaceholder": "Reason for blocking (optional)",
+      "duration": "Duration",
+      "submit": "Block"
+    },
+    "bulkDialog": {
+      "title": "Bulk Block",
+      "description": "Enter IP addresses, one per line",
+      "ips": "IP List",
+      "ipsPlaceholder": "1.2.3.4\n10.0.0.0/24\n192.168.1.0/24",
+      "reason": "Reason",
+      "duration": "Duration",
+      "submit": "Block All"
+    },
+    "deleteDialog": {
+      "title": "Remove block",
+      "description": "Remove block for {{ip}}?"
     }
   },
   "violations": {
