@@ -111,7 +111,7 @@ services:
     image: ghcr.io/case211/remnawave-admin-web-frontend:dev
     build:
       context: ./web/frontend
-      dockerfile: ./web/frontend/Dockerfile
+      dockerfile: Dockerfile
     container_name: remnawave-web-frontend
     restart: unless-stopped
     env_file:
