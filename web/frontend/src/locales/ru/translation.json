@@ -1235,6 +1235,7 @@
       "all": "Все",
       "pending": "Ожидают",
       "topViolators": "Топ нарушителей",
+      "banhammer": "Banhammer",
       "reports": "Отчёты и ASN"
     },
     "severity": {
@@ -1425,6 +1426,69 @@
       "removed": "HWID удалён из blacklist",
       "affectedUsers": "Пользователи с этим HWID ({{count}})",
       "noUsers": "Пользователей с этим HWID не найдено"
+    },
+    "banhammer": {
+      "refresh": "Обновить",
+      "settings": {
+        "title": "Настройки Banhammer",
+        "description": "Лимиты предупреждений, cooldown, стадии блокировок и шаблон предупреждения.",
+        "enabled": "Включить Banhammer",
+        "warningLimit": "Лимит предупреждений",
+        "warningCooldownSec": "Cooldown предупреждений (сек)",
+        "blockStagesMinutes": "Стадии блокировок (минуты, через запятую)",
+        "blockStagesHint": "Пример: 15, 60, 360, 720, 1440",
+        "warningTemplate": "Шаблон предупреждения",
+        "warningTemplatePlaceholder": "Обнаружена подозрительная активность. Повтор приведёт к блокировке.",
+        "saved": "Настройки Banhammer сохранены",
+        "saveError": "Не удалось сохранить настройки Banhammer"
+      },
+      "nodePolicies": {
+        "title": "Управление Node Policy",
+        "description": "Настройка сетевых политик по нодам для Banhammer.",
+        "nodes": "Ноды",
+        "noNodes": "Нет доступных нод",
+        "selectNode": "Выберите ноду для редактирования политики.",
+        "noPolicy": "Нет политики",
+        "enabled": "Включена",
+        "disabled": "Отключена",
+        "enable": "Включить сетевую политику",
+        "allowedConnectionTypes": "Разрешённые типы подключений",
+        "allowedConnectionTypesRequired": "Выберите хотя бы один тип подключения при включённой политике.",
+        "violationScore": "Скор нарушения",
+        "strictMode": "Строгий режим",
+        "reasonTemplate": "Шаблон причины",
+        "reasonTemplatePlaceholder": "Для LTE-ноды запрещён Wi-Fi",
+        "delete": "Удалить политику",
+        "saved": "Node policy сохранена",
+        "deleted": "Node policy удалена",
+        "saveError": "Не удалось сохранить node policy",
+        "deleteError": "Не удалось удалить node policy"
+      },
+      "events": {
+        "title": "События Banhammer",
+        "description": "Последние предупреждения и блокировки.",
+        "empty": "Событий пока нет",
+        "columns": {
+          "time": "Время",
+          "action": "Действие",
+          "user": "Пользователь",
+          "node": "Нода",
+          "reason": "Причина"
+        }
+      },
+      "states": {
+        "title": "Состояния Banhammer",
+        "description": "Текущие состояния предупреждений/блокировок пользователей.",
+        "empty": "Активных состояний нет",
+        "columns": {
+          "user": "Пользователь",
+          "stage": "Стадия",
+          "warnings": "Предупреждения",
+          "blockedUntil": "Блок до",
+          "updatedAt": "Обновлено",
+          "node": "Нода"
+        }
+      }
     },
     "analyzers": {
       "temporal": "Временной (одновременные подключения)",

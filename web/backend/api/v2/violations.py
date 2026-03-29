@@ -5,7 +5,7 @@ import json
 import logging
 from fastapi import APIRouter, Depends, Path, Query, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from typing import Optional
+from typing import Any, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
 
@@ -31,6 +31,15 @@ from web.backend.schemas.violation import (
     WhitelistItem,
     WhitelistListResponse,
 )
+from web.backend.schemas.banhammer import (
+    BanhammerEventItem,
+    BanhammerEventsResponse,
+    BanhammerSettingsResponse,
+    BanhammerSettingsUpdateRequest,
+    BanhammerStateItem,
+    BanhammerStatesResponse,
+)
+from shared.config_service import config_service
 from shared.database import DatabaseService
 from shared.geoip import get_geoip_service
 
@@ -39,6 +48,12 @@ router = APIRouter()
 
 
 get_severity = ViolationListItem.get_severity
+
+_BANHAMMER_DEFAULT_STAGES = [15, 60, 360, 720, 1440]
+_BANHAMMER_DEFAULT_TEMPLATE = (
+    "Banhammer warning: node network policy mismatch detected. "
+    "Reconnect using an allowed network type."
+)
 
 
 def _parse_hwid_matched(raw) -> list | None:
@@ -73,6 +88,114 @@ def _row_to_list_item(v: dict) -> ViolationListItem:
         notified=v.get('notified_at') is not None,
         reasons=v.get('reasons') or [],
         admin_comment=v.get('admin_comment'),
+    )
+
+
+def _parse_banhammer_stages(raw_value: Any) -> list[int]:
+    value = raw_value
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except Exception:
+            value = []
+    if not isinstance(value, list):
+        value = []
+
+    stages: list[int] = []
+    for item in value:
+        try:
+            minutes = int(item)
+        except (TypeError, ValueError):
+            continue
+        if minutes > 0:
+            stages.append(minutes)
+
+    return stages or list(_BANHAMMER_DEFAULT_STAGES)
+
+
+def _to_int_safe(value: Any, default: int, min_value: int = 1) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(min_value, parsed)
+
+
+def _to_bool_safe(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return default
+
+
+def _get_banhammer_settings_response() -> BanhammerSettingsResponse:
+    warning_template = config_service.get("banhammer_warning_template", _BANHAMMER_DEFAULT_TEMPLATE)
+    warning_template = str(warning_template).strip() if warning_template is not None else ""
+    if not warning_template:
+        warning_template = _BANHAMMER_DEFAULT_TEMPLATE
+
+    return BanhammerSettingsResponse(
+        banhammer_enabled=_to_bool_safe(config_service.get("banhammer_enabled", False), False),
+        banhammer_warning_limit=_to_int_safe(config_service.get("banhammer_warning_limit", 3), 3, min_value=1),
+        banhammer_warning_cooldown_seconds=_to_int_safe(
+            config_service.get("banhammer_warning_cooldown_seconds", 60),
+            60,
+            min_value=1,
+        ),
+        banhammer_block_stages_minutes=_parse_banhammer_stages(
+            config_service.get("banhammer_block_stages_minutes", _BANHAMMER_DEFAULT_STAGES)
+        ),
+        banhammer_warning_template=warning_template,
+    )
+
+
+def _row_to_banhammer_event_item(row: dict) -> BanhammerEventItem:
+    details = row.get("details")
+    if isinstance(details, str):
+        try:
+            details = json.loads(details)
+        except Exception:
+            details = {}
+    if not isinstance(details, dict):
+        details = {}
+
+    return BanhammerEventItem(
+        id=int(row.get("id", 0)),
+        user_uuid=str(row.get("user_uuid", "")),
+        username=row.get("username"),
+        email=row.get("email"),
+        event_type=str(row.get("event_type", "")),
+        warning_number=row.get("warning_number"),
+        block_stage=row.get("block_stage"),
+        block_minutes=row.get("block_minutes"),
+        blocked_until=row.get("blocked_until"),
+        message=row.get("message"),
+        details=details,
+        created_at=row.get("created_at") or datetime.utcnow(),
+    )
+
+
+def _row_to_banhammer_state_item(row: dict) -> BanhammerStateItem:
+    return BanhammerStateItem(
+        user_uuid=str(row.get("user_uuid", "")),
+        username=row.get("username"),
+        email=row.get("email"),
+        user_status=row.get("user_status"),
+        warnings_count=int(row.get("warnings_count", 0) or 0),
+        block_stage=int(row.get("block_stage", 0) or 0),
+        blocked_until=row.get("blocked_until"),
+        pre_block_status=row.get("pre_block_status"),
+        last_warning_at=row.get("last_warning_at"),
+        created_at=row.get("created_at") or datetime.utcnow(),
+        updated_at=row.get("updated_at") or datetime.utcnow(),
+        is_blocked=bool(row.get("is_blocked", False)),
     )
 
 
@@ -772,6 +895,98 @@ async def _handle_blacklisted_hwid_users(
         )
 
 
+# ── Banhammer ────────────────────────────────────────────────
+
+@router.get("/banhammer/settings", response_model=BanhammerSettingsResponse)
+async def get_banhammer_settings(
+    admin: AdminUser = Depends(require_permission("violations", "view")),
+):
+    """Get Banhammer runtime settings."""
+    return _get_banhammer_settings_response()
+
+
+@router.put("/banhammer/settings", response_model=BanhammerSettingsResponse)
+async def update_banhammer_settings(
+    data: BanhammerSettingsUpdateRequest,
+    request: Request,
+    admin: AdminUser = Depends(require_permission("violations", "resolve")),
+):
+    """Update Banhammer runtime settings."""
+    warning_template = data.banhammer_warning_template.strip()
+    if not warning_template:
+        warning_template = _BANHAMMER_DEFAULT_TEMPLATE
+
+    updates: list[tuple[str, Any]] = [
+        ("banhammer_enabled", data.banhammer_enabled),
+        ("banhammer_warning_limit", data.banhammer_warning_limit),
+        ("banhammer_warning_cooldown_seconds", data.banhammer_warning_cooldown_seconds),
+        ("banhammer_block_stages_minutes", data.banhammer_block_stages_minutes),
+        ("banhammer_warning_template", warning_template),
+    ]
+
+    failed: list[str] = []
+    for key, value in updates:
+        ok = await config_service.set(key, value)
+        if not ok:
+            failed.append(key)
+
+    if failed:
+        raise api_error(500, E.INTERNAL_ERROR, f"Failed to update config keys: {', '.join(failed)}")
+
+    await write_audit_log(
+        admin_id=admin.account_id,
+        admin_username=admin.username,
+        action="banhammer.settings.update",
+        resource="violations",
+        resource_id="banhammer_settings",
+        details=json.dumps(
+            {
+                "banhammer_enabled": data.banhammer_enabled,
+                "banhammer_warning_limit": data.banhammer_warning_limit,
+                "banhammer_warning_cooldown_seconds": data.banhammer_warning_cooldown_seconds,
+                "banhammer_block_stages_minutes": data.banhammer_block_stages_minutes,
+            }
+        ),
+        ip_address=get_client_ip(request),
+    )
+
+    return _get_banhammer_settings_response()
+
+
+@router.get("/banhammer/events", response_model=BanhammerEventsResponse)
+async def list_banhammer_events(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=500),
+    user_uuid: Optional[str] = Query(None),
+    admin: AdminUser = Depends(require_permission("violations", "view")),
+    db: DatabaseService = Depends(get_db),
+):
+    """List Banhammer events with pagination."""
+    offset = (page - 1) * per_page
+    rows = await db.get_banhammer_events(limit=per_page, offset=offset, user_uuid=user_uuid)
+    total = await db.get_banhammer_events_count(user_uuid=user_uuid)
+    items = [_row_to_banhammer_event_item(row) for row in rows]
+    pages = (total + per_page - 1) // per_page if total > 0 else 1
+    return BanhammerEventsResponse(items=items, total=total, page=page, per_page=per_page, pages=pages)
+
+
+@router.get("/banhammer/states", response_model=BanhammerStatesResponse)
+async def list_banhammer_states(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=500),
+    only_blocked: bool = Query(False),
+    admin: AdminUser = Depends(require_permission("violations", "view")),
+    db: DatabaseService = Depends(get_db),
+):
+    """List Banhammer user states with pagination."""
+    offset = (page - 1) * per_page
+    rows = await db.get_banhammer_states(limit=per_page, offset=offset, only_blocked=only_blocked)
+    total = await db.get_banhammer_states_count(only_blocked=only_blocked)
+    items = [_row_to_banhammer_state_item(row) for row in rows]
+    pages = (total + per_page - 1) // per_page if total > 0 else 1
+    return BanhammerStatesResponse(items=items, total=total, page=page, per_page=per_page, pages=pages)
+
+
 @router.get("/{violation_id}", response_model=ViolationDetail)
 async def get_violation(
     violation_id: int,
@@ -910,4 +1125,3 @@ async def annul_violation(
 
 # ══════════════════════════════════════════════════════════════════
 # HWID Blacklist
-

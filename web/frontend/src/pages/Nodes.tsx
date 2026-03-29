@@ -26,14 +26,6 @@ import {
   Terminal,
 } from 'lucide-react'
 import client from '../api/client'
-import {
-  NODE_NETWORK_POLICY_CONNECTION_TYPES,
-  listNodePolicies,
-  upsertNodePolicy,
-  type NodeNetworkPolicy,
-  type NodeNetworkPolicyConnectionType,
-  type NodeNetworkPolicyPayload,
-} from '../api/nodes'
 import { resourcesApi } from '../api/resources'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -58,8 +50,6 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
-import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -89,228 +79,6 @@ interface NodeEditFormData {
   port: string
 }
 
-interface NodePolicyFormData {
-  is_enabled: boolean
-  expected_connection_types: NodeNetworkPolicyConnectionType[]
-  strict_mode: boolean
-  violation_score: string
-  reason_template: string
-}
-
-interface NodeSavePayload {
-  node: Record<string, unknown>
-  policy: NodePolicyFormData
-  hasExistingPolicy: boolean
-}
-
-const NODE_POLICY_DEFAULT_SCORE = 70
-const NODE_POLICY_DEFAULT_STRICT_MODE = true
-
-const NODE_POLICY_CONNECTION_TYPE_LABEL_KEYS: Record<NodeNetworkPolicyConnectionType, string> = {
-  mobile: 'nodes.networkPolicy.connectionTypes.mobile',
-  mobile_isp: 'nodes.networkPolicy.connectionTypes.mobile_isp',
-  fixed: 'nodes.networkPolicy.connectionTypes.fixed',
-  isp: 'nodes.networkPolicy.connectionTypes.isp',
-  regional_isp: 'nodes.networkPolicy.connectionTypes.regional_isp',
-  residential: 'nodes.networkPolicy.connectionTypes.residential',
-  hosting: 'nodes.networkPolicy.connectionTypes.hosting',
-  vpn: 'nodes.networkPolicy.connectionTypes.vpn',
-  business: 'nodes.networkPolicy.connectionTypes.business',
-}
-
-function createEmptyNodePolicyForm(policy?: NodeNetworkPolicy | null): NodePolicyFormData {
-  if (!policy) {
-    return {
-      is_enabled: false,
-      expected_connection_types: [],
-      strict_mode: NODE_POLICY_DEFAULT_STRICT_MODE,
-      violation_score: String(NODE_POLICY_DEFAULT_SCORE),
-      reason_template: '',
-    }
-  }
-
-  return {
-    is_enabled: policy.is_enabled,
-    expected_connection_types: [...(policy.expected_connection_types || [])],
-    strict_mode: policy.strict_mode,
-    violation_score: String(policy.violation_score ?? NODE_POLICY_DEFAULT_SCORE),
-    reason_template: policy.reason_template || '',
-  }
-}
-
-function buildNodePolicyPayload(policy: NodePolicyFormData): NodeNetworkPolicyPayload {
-  return {
-    is_enabled: policy.is_enabled,
-    expected_connection_types: [...policy.expected_connection_types],
-    strict_mode: policy.strict_mode,
-    violation_score: Number.parseInt(policy.violation_score, 10) || NODE_POLICY_DEFAULT_SCORE,
-    reason_template: policy.reason_template.trim() || null,
-  }
-}
-
-function shouldPersistNodePolicy(policy: NodePolicyFormData, hasExistingPolicy: boolean): boolean {
-  if (hasExistingPolicy) return true
-  return policy.is_enabled && policy.expected_connection_types.length > 0
-}
-
-function formatNodePolicyType(type: NodeNetworkPolicyConnectionType): string {
-  return NODE_POLICY_CONNECTION_TYPE_LABEL_KEYS[type] || type
-}
-
-function NodePolicySection({
-  value,
-  onChange,
-  disabled = false,
-}: {
-  value: NodePolicyFormData
-  onChange: (next: NodePolicyFormData) => void
-  disabled?: boolean
-}) {
-  const { t } = useTranslation()
-
-  const setField = <K extends keyof NodePolicyFormData>(key: K, nextValue: NodePolicyFormData[K]) => {
-    onChange({ ...value, [key]: nextValue })
-  }
-
-  const toggleType = (type: NodeNetworkPolicyConnectionType) => {
-    const next = value.expected_connection_types.includes(type)
-      ? value.expected_connection_types.filter((item) => item !== type)
-      : [...value.expected_connection_types, type]
-    onChange({ ...value, expected_connection_types: next })
-  }
-
-  const selectAllTypes = () => {
-    onChange({
-      ...value,
-      expected_connection_types: [...NODE_NETWORK_POLICY_CONNECTION_TYPES],
-    })
-  }
-
-  const clearAllTypes = () => {
-    onChange({ ...value, expected_connection_types: [] })
-  }
-
-  return (
-    <div className="space-y-4 rounded-xl border border-[var(--glass-border)]/40 bg-[var(--glass-bg)]/60 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-primary-400" />
-            <h3 className="text-sm font-semibold text-white">{t('nodes.networkPolicy.title')}</h3>
-          </div>
-          <p className="text-xs text-dark-200">{t('nodes.networkPolicy.description')}</p>
-        </div>
-        <Badge variant={value.is_enabled ? 'success' : 'secondary'}>
-          {value.is_enabled ? t('nodes.networkPolicy.enabled') : t('nodes.networkPolicy.disabled')}
-        </Badge>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--glass-border)]/20 bg-black/10 px-3 py-2.5">
-        <div className="space-y-0.5">
-          <Label className="text-sm">{t('nodes.networkPolicy.enable')}</Label>
-          <p className="text-xs text-dark-300">{t('nodes.networkPolicy.enableHint')}</p>
-        </div>
-        <Switch
-          checked={value.is_enabled}
-          onCheckedChange={(checked) => setField('is_enabled', checked)}
-          disabled={disabled}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-3">
-          <Label>{t('nodes.networkPolicy.allowedConnectionTypes')}</Label>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="text-xs text-primary-400 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-              onClick={selectAllTypes}
-              disabled={disabled}
-            >
-              {t('nodes.networkPolicy.selectAll')}
-            </button>
-            <span className="text-dark-400">·</span>
-            <button
-              type="button"
-              className="text-xs text-primary-400 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-              onClick={clearAllTypes}
-              disabled={disabled}
-            >
-              {t('nodes.networkPolicy.clearAll')}
-            </button>
-          </div>
-        </div>
-        <p className="text-xs text-dark-300">{t('nodes.networkPolicy.allowedConnectionTypesHint')}</p>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {NODE_NETWORK_POLICY_CONNECTION_TYPES.map((type) => {
-            const checked = value.expected_connection_types.includes(type)
-            return (
-              <label
-                key={type}
-                className={cn(
-                  'flex items-center gap-2 rounded-lg border px-3 py-2.5 transition-colors',
-                  checked
-                    ? 'border-primary-500/30 bg-primary-500/10 text-primary-300'
-                    : 'border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/40 text-dark-100',
-                  disabled && 'opacity-60'
-                )}
-              >
-                <Checkbox
-                  checked={checked}
-                  onCheckedChange={() => toggleType(type)}
-                  disabled={disabled}
-                />
-                <span className="text-sm">{t(formatNodePolicyType(type))}</span>
-              </label>
-            )
-          })}
-        </div>
-        {value.is_enabled && value.expected_connection_types.length === 0 && (
-          <p className="text-xs text-yellow-400">{t('nodes.networkPolicy.allowedConnectionTypesRequired')}</p>
-        )}
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <Label>{t('nodes.networkPolicy.violationScore')}</Label>
-          <Input
-            type="number"
-            min={0}
-            max={100}
-            value={value.violation_score}
-            onChange={(e) => setField('violation_score', e.target.value)}
-            disabled={disabled}
-          />
-          <p className="text-xs text-dark-300">{t('nodes.networkPolicy.violationScoreHint')}</p>
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-3">
-            <Label>{t('nodes.networkPolicy.strictMode')}</Label>
-            <Switch
-              checked={value.strict_mode}
-              onCheckedChange={(checked) => setField('strict_mode', checked)}
-              disabled={disabled}
-            />
-          </div>
-          <p className="text-xs text-dark-300">{t('nodes.networkPolicy.strictModeHint')}</p>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label>{t('nodes.networkPolicy.reasonTemplate')}</Label>
-        <Textarea
-          value={value.reason_template}
-          onChange={(e) => setField('reason_template', e.target.value)}
-          placeholder={t('nodes.networkPolicy.reasonTemplatePlaceholder')}
-          disabled={disabled}
-        />
-        <p className="text-xs text-dark-300">{t('nodes.networkPolicy.reasonTemplateHint')}</p>
-      </div>
-    </div>
-  )
-}
-
 // API functions
 const fetchNodes = async (): Promise<Node[]> => {
   const { data } = await client.get('/nodes', { params: { per_page: 500 } })
@@ -320,7 +88,6 @@ const fetchNodes = async (): Promise<Node[]> => {
 // Node edit modal
 function NodeEditModal({
   node,
-  initialPolicy,
   open,
   onOpenChange,
   onSave,
@@ -328,10 +95,9 @@ function NodeEditModal({
   error,
 }: {
   node: Node
-  initialPolicy?: NodeNetworkPolicy | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSave: (data: NodeSavePayload) => void
+  onSave: (data: Record<string, unknown>) => void
   isPending: boolean
   error: string
 }) {
@@ -341,7 +107,6 @@ function NodeEditModal({
     address: node.address,
     port: String(node.port),
   })
-  const [policy, setPolicy] = useState<NodePolicyFormData>(createEmptyNodePolicyForm(initialPolicy))
 
   useEffect(() => {
     setForm({
@@ -349,8 +114,7 @@ function NodeEditModal({
       address: node.address,
       port: String(node.port),
     })
-    setPolicy(createEmptyNodePolicyForm(initialPolicy))
-  }, [node, initialPolicy])
+  }, [node])
 
   const handleSubmit = () => {
     const updateData: Record<string, unknown> = {}
@@ -358,21 +122,14 @@ function NodeEditModal({
     if (form.address !== node.address) updateData.address = form.address
     const newPort = parseInt(form.port, 10)
     if (!isNaN(newPort) && newPort !== node.port) updateData.port = newPort
-    if (Object.keys(updateData).length === 0 && !shouldPersistNodePolicy(policy, Boolean(initialPolicy))) {
+    if (Object.keys(updateData).length === 0) {
       onOpenChange(false)
       return
     }
-    onSave({
-      node: updateData,
-      policy,
-      hasExistingPolicy: Boolean(initialPolicy),
-    })
+    onSave(updateData)
   }
 
-  const policyScore = Number.parseInt(policy.violation_score, 10)
-  const policyScoreValid = Number.isInteger(policyScore) && policyScore >= 0 && policyScore <= 100
-  const policyValid = !policy.is_enabled || policy.expected_connection_types.length > 0
-  const canSave = Boolean(form.name.trim() && form.address.trim() && form.port && policyScoreValid && policyValid)
+  const canSave = Boolean(form.name.trim() && form.address.trim() && form.port)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -422,8 +179,6 @@ function NodeEditModal({
           </div>
         </div>
 
-        <NodePolicySection value={policy} onChange={setPolicy} disabled={isPending} />
-
         <DialogFooter>
           <Button
             variant="secondary"
@@ -461,7 +216,7 @@ function NodeCreateModal({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSave: (data: NodeSavePayload) => void
+  onSave: (data: Record<string, unknown>) => void
   isPending: boolean
   error: string
 }) {
@@ -470,13 +225,6 @@ function NodeCreateModal({
     name: '',
     address: '',
     port: '62050',
-  })
-  const [policy, setPolicy] = useState<NodePolicyFormData>({
-    is_enabled: false,
-    expected_connection_types: [],
-    strict_mode: NODE_POLICY_DEFAULT_STRICT_MODE,
-    violation_score: String(NODE_POLICY_DEFAULT_SCORE),
-    reason_template: '',
   })
   const [selectedProfileUuid, setSelectedProfileUuid] = useState('')
   const [selectedInbounds, setSelectedInbounds] = useState<string[]>([])
@@ -502,13 +250,6 @@ function NodeCreateModal({
   useEffect(() => {
     if (!open) {
       setForm({ name: '', address: '', port: '62050' })
-      setPolicy({
-        is_enabled: false,
-        expected_connection_types: [],
-        strict_mode: NODE_POLICY_DEFAULT_STRICT_MODE,
-        violation_score: String(NODE_POLICY_DEFAULT_SCORE),
-        reason_template: '',
-      })
       setSelectedProfileUuid('')
       setSelectedInbounds([])
     }
@@ -542,18 +283,11 @@ function NodeCreateModal({
     }
     const port = parseInt(form.port, 10)
     if (!isNaN(port)) createData.port = port
-    onSave({
-      node: createData,
-      policy,
-      hasExistingPolicy: false,
-    })
+    onSave(createData)
   }
 
   const isValid = form.name.trim() && form.address.trim() && form.port && selectedProfileUuid && selectedInbounds.length > 0
-  const policyScore = Number.parseInt(policy.violation_score, 10)
-  const policyScoreValid = Number.isInteger(policyScore) && policyScore >= 0 && policyScore <= 100
-  const policyValid = !policy.is_enabled || policy.expected_connection_types.length > 0
-  const canSave = Boolean(isValid && policyScoreValid && policyValid)
+  const canSave = Boolean(isValid)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -601,8 +335,6 @@ function NodeCreateModal({
               placeholder={t('nodes.editNode.port')}
             />
           </div>
-
-          <NodePolicySection value={policy} onChange={setPolicy} disabled={isPending} />
 
           {/* Config Profile */}
           <div className="space-y-2">
@@ -949,7 +681,6 @@ function AgentTokenModal({
 // Node card component
 function NodeCard({
   node,
-  policy,
   onRestart,
   onEdit,
   onEnable,
@@ -960,7 +691,6 @@ function NodeCard({
   canDelete,
 }: {
   node: Node
-  policy?: NodeNetworkPolicy | null
   onRestart: () => void
   onEdit: () => void
   onEnable: () => void
@@ -973,20 +703,6 @@ function NodeCard({
   const { t } = useTranslation()
   const { formatBytes, formatTimeAgo } = useFormatters()
   const isOnline = node.is_connected && !node.is_disabled
-  const policyTypes = policy?.expected_connection_types || []
-  const policyTypeLabel = (type: NodeNetworkPolicyConnectionType) => t(formatNodePolicyType(type))
-  const policySummary = !policy
-    ? t('nodes.networkPolicy.noPolicy')
-    : policy.is_enabled
-      ? t('nodes.networkPolicy.enabled')
-      : t('nodes.networkPolicy.disabled')
-  const policyBadgeVariant = !policy
-    ? 'outline'
-    : policy.is_enabled
-      ? 'success'
-      : 'secondary'
-  const allowedTypesPreview = policyTypes.slice(0, 3)
-  const hiddenTypesCount = Math.max(0, policyTypes.length - allowedTypesPreview.length)
 
   const statusVariant = node.is_disabled
     ? 'secondary'
@@ -1165,50 +881,6 @@ function NodeCard({
             {node.message}
           </div>
         )}
-
-        <div className="mt-4 rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/40 p-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs uppercase tracking-wider text-dark-300">{t('nodes.networkPolicy.summaryLabel')}</span>
-                <Badge variant={policyBadgeVariant as 'outline' | 'secondary' | 'success'}>
-                  {policySummary}
-                </Badge>
-              </div>
-              <p className="text-xs text-dark-200">
-                {policy
-                  ? t('nodes.networkPolicy.scoreLabel', { score: policy.violation_score })
-                  : t('nodes.networkPolicy.noPolicyHint')}
-              </p>
-            </div>
-            {policy && (
-              <Badge variant={policy.strict_mode ? 'warning' : 'outline'} className="shrink-0">
-                {policy.strict_mode ? t('nodes.networkPolicy.strictModeShort') : t('nodes.networkPolicy.strictModeOff')}
-              </Badge>
-            )}
-          </div>
-
-          {policy && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {allowedTypesPreview.length > 0 ? (
-                <>
-                  {allowedTypesPreview.map((type) => (
-                    <Badge key={type} variant="outline" className="text-[10px] px-2 py-0.5">
-                      {policyTypeLabel(type)}
-                    </Badge>
-                  ))}
-                  {hiddenTypesCount > 0 && (
-                    <Badge variant="secondary" className="text-[10px] px-2 py-0.5">
-                      +{hiddenTypesCount}
-                    </Badge>
-                  )}
-                </>
-              ) : (
-                <span className="text-xs text-dark-300">{t('nodes.networkPolicy.noAllowedTypes')}</span>
-              )}
-            </div>
-          )}
-        </div>
       </CardContent>
     </Card>
   )
@@ -1265,16 +937,6 @@ export default function Nodes() {
     refetchInterval: 30000, // Fallback polling (WebSocket handles real-time)
   })
 
-  const { data: nodePolicies = [] } = useQuery({
-    queryKey: ['node-policies'],
-    queryFn: listNodePolicies,
-  })
-
-  const nodePoliciesByUuid = nodePolicies.reduce<Record<string, NodeNetworkPolicy>>((acc, policy) => {
-    acc[policy.node_uuid] = policy
-    return acc
-  }, {})
-
   // Mutations
   /** Find node name by UUID for descriptive toasts */
   const getNodeName = (uuid: string) => nodes.find((n) => n.uuid === uuid)?.name || uuid.slice(0, 8)
@@ -1316,7 +978,6 @@ export default function Nodes() {
     mutationFn: (uuid: string) => client.delete(`/nodes/${uuid}`),
     onSuccess: (_data, uuid) => {
       queryClient.invalidateQueries({ queryKey: ['nodes'] })
-      queryClient.invalidateQueries({ queryKey: ['node-policies'] })
       toast.success(t('nodes.toast.deleted'), { description: getNodeName(uuid) })
     },
     onError: (err: Error & { response?: { data?: { detail?: string } } }) => {
@@ -1325,17 +986,13 @@ export default function Nodes() {
   })
 
   const updateNode = useMutation({
-    mutationFn: async ({ uuid, node, policy, hasExistingPolicy }: { uuid: string } & NodeSavePayload) => {
+    mutationFn: async ({ uuid, node }: { uuid: string; node: Record<string, unknown> }) => {
       if (Object.keys(node).length > 0) {
         await client.patch(`/nodes/${uuid}`, node)
-      }
-      if (shouldPersistNodePolicy(policy, hasExistingPolicy)) {
-        await upsertNodePolicy(uuid, buildNodePolicyPayload(policy))
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['nodes'] })
-      queryClient.invalidateQueries({ queryKey: ['node-policies'] })
       setEditingNode(null)
       setEditError('')
       toast.success(t('nodes.toast.updated'))
@@ -1347,16 +1004,12 @@ export default function Nodes() {
   })
 
   const createNode = useMutation({
-    mutationFn: async ({ node, policy, hasExistingPolicy }: NodeSavePayload) => {
+    mutationFn: async (node: Record<string, unknown>) => {
       const { data } = await client.post('/nodes', node)
-      if (shouldPersistNodePolicy(policy, hasExistingPolicy)) {
-        await upsertNodePolicy(data.uuid, buildNodePolicyPayload(policy))
-      }
       return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['nodes'] })
-      queryClient.invalidateQueries({ queryKey: ['node-policies'] })
       setShowCreateModal(false)
       setCreateError('')
       toast.success(t('nodes.toast.created'))
@@ -1489,7 +1142,6 @@ export default function Nodes() {
             <div key={node.uuid} className="animate-fade-in-up" style={{ animationDelay: `${0.1 + i * 0.06}s` }}>
               <NodeCard
                 node={node}
-                policy={nodePoliciesByUuid[node.uuid] || null}
                 onRestart={() => restartNode.mutate(node.uuid)}
                 onEdit={() => { setEditingNode(node); setEditError('') }}
                 onEnable={() => enableNode.mutate(node.uuid)}
@@ -1508,10 +1160,9 @@ export default function Nodes() {
       {editingNode && (
         <NodeEditModal
           node={editingNode}
-          initialPolicy={nodePoliciesByUuid[editingNode.uuid] || null}
           open={!!editingNode}
           onOpenChange={(open) => { if (!open) { setEditingNode(null); setEditError('') } }}
-          onSave={(data) => updateNode.mutate({ uuid: editingNode.uuid, ...data })}
+          onSave={(node) => updateNode.mutate({ uuid: editingNode.uuid, node })}
           isPending={updateNode.isPending}
           error={editError}
         />
@@ -1521,7 +1172,7 @@ export default function Nodes() {
       <NodeCreateModal
         open={showCreateModal}
         onOpenChange={(open) => { if (!open) { setShowCreateModal(false); setCreateError('') } else { setShowCreateModal(true) } }}
-        onSave={(data) => createNode.mutate(data)}
+        onSave={(node) => createNode.mutate(node)}
         isPending={createNode.isPending}
         error={createError}
       />

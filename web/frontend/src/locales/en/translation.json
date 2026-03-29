@@ -1235,6 +1235,7 @@
       "all": "All",
       "pending": "Pending",
       "topViolators": "Top violators",
+      "banhammer": "Banhammer",
       "reports": "Reports & ASN"
     },
     "severity": {
@@ -1425,6 +1426,69 @@
       "removed": "HWID removed from blacklist",
       "affectedUsers": "Users with this HWID ({{count}})",
       "noUsers": "No users found with this HWID"
+    },
+    "banhammer": {
+      "refresh": "Refresh",
+      "settings": {
+        "title": "Banhammer Settings",
+        "description": "Configure warning limits, cooldown, block stages and warning text template.",
+        "enabled": "Enable Banhammer",
+        "warningLimit": "Warning limit",
+        "warningCooldownSec": "Warning cooldown (sec)",
+        "blockStagesMinutes": "Block stages (minutes, comma separated)",
+        "blockStagesHint": "Example: 15, 60, 360, 720, 1440",
+        "warningTemplate": "Warning template",
+        "warningTemplatePlaceholder": "Suspicious activity detected. Continued abuse will lead to blocking.",
+        "saved": "Banhammer settings saved",
+        "saveError": "Failed to save Banhammer settings"
+      },
+      "nodePolicies": {
+        "title": "Node Policy Management",
+        "description": "Manage per-node network policies used by Banhammer.",
+        "nodes": "Nodes",
+        "noNodes": "No nodes available",
+        "selectNode": "Select a node to edit policy settings.",
+        "noPolicy": "No policy",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "enable": "Enable network policy",
+        "allowedConnectionTypes": "Allowed connection types",
+        "allowedConnectionTypesRequired": "Select at least one connection type when policy is enabled.",
+        "violationScore": "Violation score",
+        "strictMode": "Strict mode",
+        "reasonTemplate": "Reason template",
+        "reasonTemplatePlaceholder": "Wi-Fi usage is forbidden on LTE node",
+        "delete": "Delete policy",
+        "saved": "Node policy saved",
+        "deleted": "Node policy deleted",
+        "saveError": "Failed to save node policy",
+        "deleteError": "Failed to delete node policy"
+      },
+      "events": {
+        "title": "Banhammer Events",
+        "description": "Recent warning and block actions.",
+        "empty": "No events yet",
+        "columns": {
+          "time": "Time",
+          "action": "Action",
+          "user": "User",
+          "node": "Node",
+          "reason": "Reason"
+        }
+      },
+      "states": {
+        "title": "Banhammer States",
+        "description": "Current warning/block states for users.",
+        "empty": "No active states",
+        "columns": {
+          "user": "User",
+          "stage": "Stage",
+          "warnings": "Warnings",
+          "blockedUntil": "Blocked until",
+          "updatedAt": "Updated",
+          "node": "Node"
+        }
+      }
     },
     "analyzers": {
       "temporal": "Temporal (simultaneous connections)",

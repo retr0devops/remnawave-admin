@@ -5541,6 +5541,370 @@ class DatabaseService:
             logger.error("Error deleting node network policy for %s: %s", node_uuid, e, exc_info=True)
             return False
 
+    # ==================== Banhammer ====================
+
+    async def get_banhammer_state(self, user_uuid: str, create_if_missing: bool = True) -> Optional[Dict[str, Any]]:
+        """Get Banhammer state for user (optionally creates a default row)."""
+        if not self.is_connected:
+            return None
+
+        try:
+            async with self.acquire() as conn:
+                if create_if_missing:
+                    await conn.execute(
+                        """
+                        INSERT INTO banhammer_user_states (
+                            user_uuid, warnings_count, block_stage,
+                            blocked_until, pre_block_status, last_warning_at,
+                            created_at, updated_at
+                        )
+                        VALUES ($1::uuid, 0, 0, NULL, NULL, NULL, NOW(), NOW())
+                        ON CONFLICT (user_uuid) DO NOTHING
+                        """,
+                        user_uuid,
+                    )
+
+                row = await conn.fetchrow(
+                    """
+                    SELECT
+                        user_uuid,
+                        warnings_count,
+                        block_stage,
+                        blocked_until,
+                        pre_block_status,
+                        last_warning_at,
+                        created_at,
+                        updated_at
+                    FROM banhammer_user_states
+                    WHERE user_uuid = $1::uuid
+                    """,
+                    user_uuid,
+                )
+                return dict(row) if row else None
+        except Exception as e:
+            msg = str(e)
+            if "banhammer_user_states" in msg and "does not exist" in msg:
+                logger.debug("banhammer_user_states table does not exist yet")
+                return None
+            logger.error("Error getting Banhammer state for %s: %s", user_uuid, e, exc_info=True)
+            return None
+
+    async def upsert_banhammer_state(
+        self,
+        user_uuid: str,
+        warnings_count: int = 0,
+        block_stage: int = 0,
+        blocked_until: Optional[datetime] = None,
+        pre_block_status: Optional[str] = None,
+        last_warning_at: Optional[datetime] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Create or update Banhammer state for user."""
+        if not self.is_connected:
+            return None
+
+        try:
+            async with self.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO banhammer_user_states (
+                        user_uuid,
+                        warnings_count,
+                        block_stage,
+                        blocked_until,
+                        pre_block_status,
+                        last_warning_at,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (
+                        $1::uuid,
+                        $2,
+                        $3,
+                        $4,
+                        $5,
+                        $6,
+                        NOW(),
+                        NOW()
+                    )
+                    ON CONFLICT (user_uuid) DO UPDATE SET
+                        warnings_count = EXCLUDED.warnings_count,
+                        block_stage = EXCLUDED.block_stage,
+                        blocked_until = EXCLUDED.blocked_until,
+                        pre_block_status = EXCLUDED.pre_block_status,
+                        last_warning_at = EXCLUDED.last_warning_at,
+                        updated_at = NOW()
+                    RETURNING
+                        user_uuid,
+                        warnings_count,
+                        block_stage,
+                        blocked_until,
+                        pre_block_status,
+                        last_warning_at,
+                        created_at,
+                        updated_at
+                    """,
+                    user_uuid,
+                    max(0, int(warnings_count)),
+                    max(0, int(block_stage)),
+                    blocked_until,
+                    pre_block_status,
+                    last_warning_at,
+                )
+                return dict(row) if row else None
+        except Exception as e:
+            msg = str(e)
+            if "banhammer_user_states" in msg and "does not exist" in msg:
+                logger.debug("banhammer_user_states table does not exist yet")
+                return None
+            logger.error("Error upserting Banhammer state for %s: %s", user_uuid, e, exc_info=True)
+            return None
+
+    async def reset_banhammer_state(self, user_uuid: str) -> bool:
+        """Reset Banhammer state counters/flags for user."""
+        if not self.is_connected:
+            return False
+
+        try:
+            async with self.acquire() as conn:
+                result = await conn.execute(
+                    """
+                    UPDATE banhammer_user_states
+                    SET
+                        warnings_count = 0,
+                        block_stage = 0,
+                        blocked_until = NULL,
+                        pre_block_status = NULL,
+                        last_warning_at = NULL,
+                        updated_at = NOW()
+                    WHERE user_uuid = $1::uuid
+                    """,
+                    user_uuid,
+                )
+                return result == "UPDATE 1"
+        except Exception as e:
+            msg = str(e)
+            if "banhammer_user_states" in msg and "does not exist" in msg:
+                logger.debug("banhammer_user_states table does not exist yet")
+                return False
+            logger.error("Error resetting Banhammer state for %s: %s", user_uuid, e, exc_info=True)
+            return False
+
+    async def get_banhammer_states(
+        self,
+        limit: int = 20,
+        offset: int = 0,
+        only_blocked: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """List Banhammer states with pagination."""
+        if not self.is_connected:
+            return []
+
+        try:
+            where = ""
+            if only_blocked:
+                where = "WHERE s.blocked_until IS NOT NULL AND s.blocked_until > NOW()"
+
+            async with self.acquire() as conn:
+                rows = await conn.fetch(
+                    f"""
+                    SELECT
+                        s.user_uuid,
+                        u.username,
+                        u.email,
+                        u.status AS user_status,
+                        s.warnings_count,
+                        s.block_stage,
+                        s.blocked_until,
+                        s.pre_block_status,
+                        s.last_warning_at,
+                        s.created_at,
+                        s.updated_at,
+                        (s.blocked_until IS NOT NULL AND s.blocked_until > NOW()) AS is_blocked
+                    FROM banhammer_user_states s
+                    LEFT JOIN users u ON u.uuid = s.user_uuid
+                    {where}
+                    ORDER BY is_blocked DESC, s.updated_at DESC, s.user_uuid
+                    LIMIT $1 OFFSET $2
+                    """,
+                    limit,
+                    offset,
+                )
+                return [dict(r) for r in rows]
+        except Exception as e:
+            msg = str(e)
+            if "banhammer_user_states" in msg and "does not exist" in msg:
+                logger.debug("banhammer_user_states table does not exist yet")
+                return []
+            logger.error("Error listing Banhammer states: %s", e, exc_info=True)
+            return []
+
+    async def get_banhammer_states_count(self, only_blocked: bool = False) -> int:
+        """Count Banhammer states (optionally only currently blocked)."""
+        if not self.is_connected:
+            return 0
+
+        try:
+            where = ""
+            if only_blocked:
+                where = "WHERE blocked_until IS NOT NULL AND blocked_until > NOW()"
+
+            async with self.acquire() as conn:
+                result = await conn.fetchval(
+                    f"SELECT COUNT(*) FROM banhammer_user_states {where}"
+                )
+                return int(result or 0)
+        except Exception as e:
+            msg = str(e)
+            if "banhammer_user_states" in msg and "does not exist" in msg:
+                logger.debug("banhammer_user_states table does not exist yet")
+                return 0
+            logger.error("Error counting Banhammer states: %s", e, exc_info=True)
+            return 0
+
+    async def add_banhammer_event(
+        self,
+        user_uuid: str,
+        event_type: str,
+        warning_number: Optional[int] = None,
+        block_stage: Optional[int] = None,
+        block_minutes: Optional[int] = None,
+        blocked_until: Optional[datetime] = None,
+        message: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Create Banhammer event row."""
+        if not self.is_connected:
+            return None
+
+        try:
+            async with self.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO banhammer_events (
+                        user_uuid,
+                        event_type,
+                        warning_number,
+                        block_stage,
+                        block_minutes,
+                        blocked_until,
+                        message,
+                        details,
+                        created_at
+                    )
+                    VALUES (
+                        $1::uuid,
+                        $2,
+                        $3,
+                        $4,
+                        $5,
+                        $6,
+                        $7,
+                        $8::jsonb,
+                        NOW()
+                    )
+                    RETURNING
+                        id,
+                        user_uuid,
+                        event_type,
+                        warning_number,
+                        block_stage,
+                        block_minutes,
+                        blocked_until,
+                        message,
+                        details,
+                        created_at
+                    """,
+                    user_uuid,
+                    event_type,
+                    warning_number,
+                    block_stage,
+                    block_minutes,
+                    blocked_until,
+                    message,
+                    json.dumps(details or {}),
+                )
+                return dict(row) if row else None
+        except Exception as e:
+            msg = str(e)
+            if "banhammer_events" in msg and "does not exist" in msg:
+                logger.debug("banhammer_events table does not exist yet")
+                return None
+            logger.error("Error adding Banhammer event for %s: %s", user_uuid, e, exc_info=True)
+            return None
+
+    async def get_banhammer_events(
+        self,
+        limit: int = 20,
+        offset: int = 0,
+        user_uuid: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """List Banhammer events with optional user filter."""
+        if not self.is_connected:
+            return []
+
+        try:
+            params: list[Any] = [limit, offset]
+            where = ""
+            if user_uuid:
+                where = "WHERE e.user_uuid = $3::uuid"
+                params.append(user_uuid)
+
+            async with self.acquire() as conn:
+                rows = await conn.fetch(
+                    f"""
+                    SELECT
+                        e.id,
+                        e.user_uuid,
+                        u.username,
+                        u.email,
+                        e.event_type,
+                        e.warning_number,
+                        e.block_stage,
+                        e.block_minutes,
+                        e.blocked_until,
+                        e.message,
+                        e.details,
+                        e.created_at
+                    FROM banhammer_events e
+                    LEFT JOIN users u ON u.uuid = e.user_uuid
+                    {where}
+                    ORDER BY e.created_at DESC, e.id DESC
+                    LIMIT $1 OFFSET $2
+                    """,
+                    *params,
+                )
+                return [dict(r) for r in rows]
+        except Exception as e:
+            msg = str(e)
+            if "banhammer_events" in msg and "does not exist" in msg:
+                logger.debug("banhammer_events table does not exist yet")
+                return []
+            logger.error("Error listing Banhammer events: %s", e, exc_info=True)
+            return []
+
+    async def get_banhammer_events_count(self, user_uuid: Optional[str] = None) -> int:
+        """Count Banhammer events with optional user filter."""
+        if not self.is_connected:
+            return 0
+
+        try:
+            async with self.acquire() as conn:
+                if user_uuid:
+                    result = await conn.fetchval(
+                        "SELECT COUNT(*) FROM banhammer_events WHERE user_uuid = $1::uuid",
+                        user_uuid,
+                    )
+                else:
+                    result = await conn.fetchval("SELECT COUNT(*) FROM banhammer_events")
+                return int(result or 0)
+        except Exception as e:
+            msg = str(e)
+            if "banhammer_events" in msg and "does not exist" in msg:
+                logger.debug("banhammer_events table does not exist yet")
+                return 0
+            logger.error("Error counting Banhammer events: %s", e, exc_info=True)
+            return 0
+
     # ==================== Blocked IPs ====================
 
     async def get_blocked_ips(

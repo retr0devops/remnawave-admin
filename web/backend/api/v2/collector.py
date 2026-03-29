@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from shared.banhammer import BanhammerService
 from shared.database import db_service
 from shared.connection_monitor import ConnectionMonitor
 from shared.violation_detector import IntelligentViolationDetector, ViolationAction
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 # Инициализируем сервисы (синглтоны на уровне модуля)
 connection_monitor = ConnectionMonitor(db_service)
 violation_detector = IntelligentViolationDetector(db_service, connection_monitor)
+banhammer_service = BanhammerService(db_service)
 
 # Per-user cooldown for violation checks (avoid re-checking every 30s batch)
 _violation_check_cooldown: dict[str, datetime] = {}
@@ -635,10 +637,78 @@ async def _process_torrent_violations(
         logger.error("Background torrent violation processing failed: %s", e)
 
 
-async def _check_single_user(user_uuid: str, min_score: float, sem: asyncio.Semaphore, cooldown_override: Optional[int] = None):
+async def _lookup_ip_metadata_for_connections(active_conns):
+    """Lookup IP metadata for a set of active connections."""
+    if not active_conns:
+        return {}
+
+    unique_ips = list({str(c.ip_address) for c in active_conns if getattr(c, "ip_address", None)})
+    if not unique_ips:
+        return {}
+
+    try:
+        from shared.geoip import get_geoip_service
+
+        geoip = get_geoip_service()
+        return await geoip.lookup_batch(unique_ips)
+    except Exception as e:
+        logger.debug("GeoIP lookup failed: %s", e)
+        return {}
+
+
+async def _run_banhammer_for_user(user_uuid: str):
+    """
+    Run Banhammer checks independently from anti-abuse detector.
+
+    Returns:
+        tuple(active_connections, ip_metadata_cache)
+    """
+    active_conns = []
+    ip_metadata = {}
+
+    try:
+        banhammer_enabled = config_service.get("banhammer_enabled", False)
+
+        if banhammer_enabled:
+            active_conns = await connection_monitor.get_user_active_connections(user_uuid, max_age_minutes=5)
+            ip_metadata = await _lookup_ip_metadata_for_connections(active_conns)
+
+        result = await banhammer_service.process_user(
+            user_uuid=user_uuid,
+            active_connections=active_conns,
+            ip_metadata_cache=ip_metadata,
+        )
+
+        if result.action in {"warn", "block", "blocked", "block_failed", "unblock_failed"}:
+            logger.info(
+                "Banhammer result: user=%s action=%s warnings=%d stage=%d blocked_until=%s",
+                user_uuid,
+                result.action,
+                result.warning_count,
+                result.block_stage,
+                result.blocked_until.isoformat() if result.blocked_until else None,
+            )
+    except Exception as e:
+        logger.warning("Banhammer processing failed for %s: %s", user_uuid, e)
+
+    return active_conns, ip_metadata
+
+
+async def _check_single_user(
+    user_uuid: str,
+    min_score: float,
+    sem: asyncio.Semaphore,
+    cooldown_override: Optional[int] = None,
+    run_anti_abuse: bool = True,
+):
     """Check a single user for violations (with semaphore for concurrency control)."""
     async with sem:
         try:
+            banhammer_active_conns, banhammer_ip_metadata = await _run_banhammer_for_user(user_uuid)
+
+            if not run_anti_abuse:
+                return
+
             # Whitelist check
             whitelisted, excluded_analyzers = await db_service.is_user_violation_whitelisted(user_uuid)
             if whitelisted and excluded_analyzers is None:
@@ -661,8 +731,14 @@ async def _check_single_user(user_uuid: str, min_score: float, sem: asyncio.Sema
                     stats.unique_ips_in_window, stats.simultaneous_connections,
                 )
 
+            # Node policy checks are handled by independent Banhammer subsystem.
+            # Keep anti-abuse detector isolated from node-policy signals.
+            detector_exclusions = set(excluded_analyzers or [])
+            detector_exclusions.add("node_policy")
             violation_score = await violation_detector.check_user(
-                user_uuid, window_minutes=60, excluded_analyzers=excluded_analyzers
+                user_uuid,
+                window_minutes=60,
+                excluded_analyzers=list(detector_exclusions),
             )
 
             had_violation = bool(violation_score and violation_score.total >= min_score)
@@ -711,18 +787,13 @@ async def _check_single_user(user_uuid: str, min_score: float, sem: asyncio.Sema
                     violation_score.reasons[:3],
                 )
 
-                active_conns = await connection_monitor.get_user_active_connections(user_uuid, max_age_minutes=5)
+                active_conns = banhammer_active_conns or await connection_monitor.get_user_active_connections(
+                    user_uuid,
+                    max_age_minutes=5,
+                )
                 user_info = await db_service.get_user_by_uuid(user_uuid)
 
-                ip_metadata = {}
-                if active_conns:
-                    try:
-                        from shared.geoip import get_geoip_service
-                        geoip = get_geoip_service()
-                        unique_ips = list(set(str(c.ip_address) for c in active_conns))
-                        ip_metadata = await geoip.lookup_batch(unique_ips)
-                    except Exception as geo_error:
-                        logger.warning("GeoIP lookup failed for user %s: %s", user_uuid, geo_error)
+                ip_metadata = banhammer_ip_metadata or await _lookup_ip_metadata_for_connections(active_conns)
 
                 try:
                     from web.backend.core.violation_notifier import send_violation_notification
@@ -824,9 +895,6 @@ async def _run_violation_detection(affected_user_uuids: set):
     """Background task: check affected users for violations."""
     try:
         violations_enabled = config_service.get("violations_enabled", True)
-        if not violations_enabled:
-            return
-
         min_score = config_service.get("violations_min_score", 50.0)
 
         # Cleanup stale cooldown entries (older than 1h)
@@ -859,18 +927,28 @@ async def _run_violation_detection(affected_user_uuids: set):
 
         user_sem = asyncio.Semaphore(max_concurrent)
         await asyncio.gather(
-            *(_check_single_user(uuid, min_score, user_sem, adaptive_cooldown) for uuid in affected_user_uuids),
+            *(
+                _check_single_user(
+                    uuid,
+                    min_score,
+                    user_sem,
+                    adaptive_cooldown,
+                    run_anti_abuse=violations_enabled,
+                )
+                for uuid in affected_user_uuids
+            ),
             return_exceptions=True,
         )
 
         # Periodic cleanup of old violations
-        global _last_violation_cleanup
-        if (datetime.utcnow() - _last_violation_cleanup).total_seconds() > 3600:
-            retention_days = config_service.get("violation_retention_days", 90)
-            cleaned = await db_service.cleanup_old_violations(retention_days)
-            if cleaned:
-                logger.info("Cleaned up %d old violations (retention: %d days)", cleaned, retention_days)
-            _last_violation_cleanup = datetime.utcnow()
+        if violations_enabled:
+            global _last_violation_cleanup
+            if (datetime.utcnow() - _last_violation_cleanup).total_seconds() > 3600:
+                retention_days = config_service.get("violation_retention_days", 90)
+                cleaned = await db_service.cleanup_old_violations(retention_days)
+                if cleaned:
+                    logger.info("Cleaned up %d old violations (retention: %d days)", cleaned, retention_days)
+                _last_violation_cleanup = datetime.utcnow()
 
     except Exception as e:
         logger.error("Background violation detection failed: %s", e)

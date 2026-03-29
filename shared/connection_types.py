@@ -23,6 +23,11 @@ def normalize_connection_type(value: str | None) -> str | None:
     if value is None:
         return None
     normalized = str(value).strip().lower()
+    aliases = {
+        # GeoIP providers may return these non-canonical labels.
+        "datacenter": "hosting",
+    }
+    normalized = aliases.get(normalized, normalized)
     return normalized or None
 
 

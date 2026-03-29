@@ -41,6 +41,22 @@ import {
   ArrowUpRight,
 } from 'lucide-react'
 import client from '../api/client'
+import {
+  NODE_NETWORK_POLICY_CONNECTION_TYPES,
+  deleteBanhammerNodePolicy,
+  getBanhammerSettings,
+  listBanhammerEvents,
+  listBanhammerNodePolicies,
+  listBanhammerNodes,
+  listBanhammerStates,
+  updateBanhammerSettings,
+  upsertBanhammerNodePolicy,
+  type BanhammerEventRecord,
+  type BanhammerSettings,
+  type BanhammerStateRecord,
+  type NodeNetworkPolicy,
+  type NodeNetworkPolicyConnectionType,
+} from '../api/banhammer'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -66,6 +82,82 @@ import type {
 } from '@/types/violations'
 
 const ANALYZER_KEYS = ['temporal', 'geo', 'asn', 'profile', 'device', 'hwid'] as const
+const NODE_POLICY_DEFAULT_SCORE = 70
+const NODE_POLICY_DEFAULT_STRICT_MODE = true
+const NODE_POLICY_CONNECTION_TYPE_LABEL_KEYS: Record<NodeNetworkPolicyConnectionType, string> = {
+  mobile: 'nodes.networkPolicy.connectionTypes.mobile',
+  mobile_isp: 'nodes.networkPolicy.connectionTypes.mobile_isp',
+  fixed: 'nodes.networkPolicy.connectionTypes.fixed',
+  isp: 'nodes.networkPolicy.connectionTypes.isp',
+  regional_isp: 'nodes.networkPolicy.connectionTypes.regional_isp',
+  residential: 'nodes.networkPolicy.connectionTypes.residential',
+  hosting: 'nodes.networkPolicy.connectionTypes.hosting',
+  vpn: 'nodes.networkPolicy.connectionTypes.vpn',
+  business: 'nodes.networkPolicy.connectionTypes.business',
+}
+
+interface NodePolicyEditorForm {
+  is_enabled: boolean
+  expected_connection_types: NodeNetworkPolicyConnectionType[]
+  strict_mode: boolean
+  violation_score: string
+  reason_template: string
+}
+
+const DEFAULT_BANHAMMER_SETTINGS: BanhammerSettings = {
+  enabled: false,
+  warning_limit: 3,
+  warning_cooldown_sec: 60,
+  block_stages_minutes: [15, 60, 360, 720, 1440],
+  warning_template: null,
+}
+
+function formatNodePolicyType(type: NodeNetworkPolicyConnectionType): string {
+  return NODE_POLICY_CONNECTION_TYPE_LABEL_KEYS[type] || type
+}
+
+function createNodePolicyForm(policy?: NodeNetworkPolicy | null): NodePolicyEditorForm {
+  if (!policy) {
+    return {
+      is_enabled: false,
+      expected_connection_types: [],
+      strict_mode: NODE_POLICY_DEFAULT_STRICT_MODE,
+      violation_score: String(NODE_POLICY_DEFAULT_SCORE),
+      reason_template: '',
+    }
+  }
+
+  return {
+    is_enabled: policy.is_enabled,
+    expected_connection_types: [...(policy.expected_connection_types || [])],
+    strict_mode: policy.strict_mode,
+    violation_score: String(policy.violation_score ?? NODE_POLICY_DEFAULT_SCORE),
+    reason_template: policy.reason_template || '',
+  }
+}
+
+function parseNumberList(input: string): number[] {
+  return input
+    .split(',')
+    .map((part) => Number.parseInt(part.trim(), 10))
+    .filter((value) => Number.isInteger(value) && value > 0)
+}
+
+function getRecordValue(record: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
+      return record[key]
+    }
+  }
+  return null
+}
+
+function toDisplayText(value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return '—'
+}
 
 // ── API ──────────────────────────────────────────────────────────
 
@@ -1413,6 +1505,599 @@ function WhitelistAddDialog({
 
 // ── Whitelist tab ────────────────────────────────────────────────
 
+function BanhammerTab() {
+  const { t } = useTranslation()
+  const { formatDate } = useFormatters()
+  const queryClient = useQueryClient()
+  const canEdit = useHasPermission('violations', 'resolve')
+  const [settingsForm, setSettingsForm] = useState<BanhammerSettings>(DEFAULT_BANHAMMER_SETTINGS)
+  const [blockStagesInput, setBlockStagesInput] = useState(
+    DEFAULT_BANHAMMER_SETTINGS.block_stages_minutes.join(', '),
+  )
+
+  const { data: settings, isLoading: isSettingsLoading } = useQuery({
+    queryKey: ['banhammer-settings'],
+    queryFn: getBanhammerSettings,
+  })
+
+  useEffect(() => {
+    if (!settings) return
+    setSettingsForm(settings)
+    setBlockStagesInput(settings.block_stages_minutes.join(', '))
+  }, [settings])
+
+  const saveSettingsMutation = useMutation({
+    mutationFn: updateBanhammerSettings,
+    onSuccess: (data) => {
+      setSettingsForm(data)
+      setBlockStagesInput(data.block_stages_minutes.join(', '))
+      queryClient.invalidateQueries({ queryKey: ['banhammer-settings'] })
+      toast.success(t('violations.banhammer.settings.saved'))
+    },
+    onError: (err: Error & { response?: { data?: { detail?: string } } }) => {
+      toast.error(err.response?.data?.detail || err.message || t('violations.banhammer.settings.saveError'))
+    },
+  })
+
+  const { data: nodes = [], isLoading: isNodesLoading } = useQuery({
+    queryKey: ['banhammer-nodes'],
+    queryFn: listBanhammerNodes,
+  })
+
+  const { data: nodePolicies = [], isLoading: isPoliciesLoading } = useQuery({
+    queryKey: ['banhammer-node-policies'],
+    queryFn: listBanhammerNodePolicies,
+  })
+
+  const [selectedNodeUuid, setSelectedNodeUuid] = useState('')
+  const [policyForm, setPolicyForm] = useState<NodePolicyEditorForm>(() => createNodePolicyForm())
+
+  useEffect(() => {
+    if (selectedNodeUuid || nodes.length === 0) return
+    setSelectedNodeUuid(nodes[0].uuid)
+  }, [nodes, selectedNodeUuid])
+
+  const nodePoliciesByUuid = nodePolicies.reduce<Record<string, NodeNetworkPolicy>>((acc, policy) => {
+    acc[policy.node_uuid] = policy
+    return acc
+  }, {})
+
+  const selectedNodePolicy = selectedNodeUuid ? nodePoliciesByUuid[selectedNodeUuid] || null : null
+  const selectedNode = selectedNodeUuid ? nodes.find((node) => node.uuid === selectedNodeUuid) || null : null
+
+  useEffect(() => {
+    setPolicyForm(createNodePolicyForm(selectedNodePolicy))
+  }, [selectedNodeUuid, selectedNodePolicy])
+
+  const savePolicyMutation = useMutation({
+    mutationFn: (params: { nodeUuid: string; form: NodePolicyEditorForm }) => {
+      const parsedScore = Number.parseInt(params.form.violation_score, 10)
+      return upsertBanhammerNodePolicy(params.nodeUuid, {
+        is_enabled: params.form.is_enabled,
+        expected_connection_types: [...params.form.expected_connection_types],
+        strict_mode: params.form.strict_mode,
+        violation_score: Number.isInteger(parsedScore) ? parsedScore : NODE_POLICY_DEFAULT_SCORE,
+        reason_template: params.form.reason_template.trim() || null,
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['banhammer-node-policies'] })
+      queryClient.invalidateQueries({ queryKey: ['node-policies'] })
+      toast.success(t('violations.banhammer.nodePolicies.saved'))
+    },
+    onError: (err: Error & { response?: { data?: { detail?: string } } }) => {
+      toast.error(err.response?.data?.detail || err.message || t('violations.banhammer.nodePolicies.saveError'))
+    },
+  })
+
+  const deletePolicyMutation = useMutation({
+    mutationFn: (nodeUuid: string) => deleteBanhammerNodePolicy(nodeUuid),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['banhammer-node-policies'] })
+      queryClient.invalidateQueries({ queryKey: ['node-policies'] })
+      setPolicyForm(createNodePolicyForm())
+      toast.success(t('violations.banhammer.nodePolicies.deleted'))
+    },
+    onError: (err: Error & { response?: { data?: { detail?: string } } }) => {
+      toast.error(err.response?.data?.detail || err.message || t('violations.banhammer.nodePolicies.deleteError'))
+    },
+  })
+
+  const { data: eventsData, isLoading: isEventsLoading } = useQuery({
+    queryKey: ['banhammer-events'],
+    queryFn: () => listBanhammerEvents({ limit: 100, offset: 0 }),
+    refetchInterval: 30000,
+  })
+
+  const { data: statesData, isLoading: isStatesLoading } = useQuery({
+    queryKey: ['banhammer-states'],
+    queryFn: () => listBanhammerStates({ limit: 100, offset: 0 }),
+    refetchInterval: 30000,
+  })
+
+  const toggleConnectionType = (type: NodeNetworkPolicyConnectionType) => {
+    setPolicyForm((prev) => {
+      const expectedConnectionTypes = prev.expected_connection_types.includes(type)
+        ? prev.expected_connection_types.filter((item) => item !== type)
+        : [...prev.expected_connection_types, type]
+      return { ...prev, expected_connection_types: expectedConnectionTypes }
+    })
+  }
+
+  const policyScore = Number.parseInt(policyForm.violation_score, 10)
+  const policyScoreValid = Number.isInteger(policyScore) && policyScore >= 0 && policyScore <= 100
+  const policyAllowedTypesValid = !policyForm.is_enabled || policyForm.expected_connection_types.length > 0
+  const canSavePolicy = canEdit && Boolean(selectedNodeUuid) && policyScoreValid && policyAllowedTypesValid
+
+  const events = eventsData?.items || []
+  const states = statesData?.items || []
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['banhammer-settings'] })
+    queryClient.invalidateQueries({ queryKey: ['banhammer-events'] })
+    queryClient.invalidateQueries({ queryKey: ['banhammer-states'] })
+    queryClient.invalidateQueries({ queryKey: ['banhammer-node-policies'] })
+    queryClient.invalidateQueries({ queryKey: ['banhammer-nodes'] })
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-end">
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={handleRefresh}
+          className="gap-2"
+        >
+          <RefreshCw className="w-4 h-4" />
+          {t('violations.banhammer.refresh')}
+        </Button>
+      </div>
+
+      <Card>
+        <CardContent className="p-4 space-y-4">
+          <div>
+            <h3 className="text-sm font-medium text-white">{t('violations.banhammer.settings.title')}</h3>
+            <p className="text-xs text-dark-300 mt-0.5">{t('violations.banhammer.settings.description')}</p>
+          </div>
+
+          {isSettingsLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <label className="flex items-center justify-between gap-3 rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/40 px-3 py-2.5">
+                <span className="text-sm text-dark-100">{t('violations.banhammer.settings.enabled')}</span>
+                <input
+                  type="checkbox"
+                  checked={settingsForm.enabled}
+                  onChange={(e) => setSettingsForm((prev) => ({ ...prev, enabled: e.target.checked }))}
+                  disabled={!canEdit || saveSettingsMutation.isPending}
+                  className="h-4 w-4 rounded border-[var(--glass-border)] bg-[var(--glass-bg)] text-primary-500 focus:ring-primary-500/40"
+                />
+              </label>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-dark-200 mb-1">{t('violations.banhammer.settings.warningLimit')}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={settingsForm.warning_limit}
+                    onChange={(e) => setSettingsForm((prev) => ({
+                      ...prev,
+                      warning_limit: Number.parseInt(e.target.value, 10) || 0,
+                    }))}
+                    disabled={!canEdit || saveSettingsMutation.isPending}
+                    className="flex h-10 w-full rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-dark-200 mb-1">{t('violations.banhammer.settings.warningCooldownSec')}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={settingsForm.warning_cooldown_sec}
+                    onChange={(e) => setSettingsForm((prev) => ({
+                      ...prev,
+                      warning_cooldown_sec: Number.parseInt(e.target.value, 10) || 0,
+                    }))}
+                    disabled={!canEdit || saveSettingsMutation.isPending}
+                    className="flex h-10 w-full rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-dark-200 mb-1">{t('violations.banhammer.settings.blockStagesMinutes')}</label>
+                <input
+                  type="text"
+                  value={blockStagesInput}
+                  onChange={(e) => {
+                    const nextValue = e.target.value
+                    setBlockStagesInput(nextValue)
+                    const parsed = parseNumberList(nextValue)
+                    setSettingsForm((prev) => ({
+                      ...prev,
+                      block_stages_minutes: parsed.length > 0 ? parsed : prev.block_stages_minutes,
+                    }))
+                  }}
+                  disabled={!canEdit || saveSettingsMutation.isPending}
+                  placeholder="30, 240, 1440"
+                  className="flex h-10 w-full rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2 text-sm text-white placeholder:text-dark-300 focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                />
+                <p className="text-[11px] text-dark-400 mt-1">{t('violations.banhammer.settings.blockStagesHint')}</p>
+              </div>
+
+              <div>
+                <label className="block text-xs text-dark-200 mb-1">{t('violations.banhammer.settings.warningTemplate')}</label>
+                <Textarea
+                  value={settingsForm.warning_template || ''}
+                  onChange={(e) => setSettingsForm((prev) => ({
+                    ...prev,
+                    warning_template: e.target.value.trim() ? e.target.value : null,
+                  }))}
+                  disabled={!canEdit || saveSettingsMutation.isPending}
+                  placeholder={t('violations.banhammer.settings.warningTemplatePlaceholder')}
+                />
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  onClick={() => saveSettingsMutation.mutate(settingsForm)}
+                  disabled={!canEdit || saveSettingsMutation.isPending}
+                >
+                  {saveSettingsMutation.isPending ? t('common.saving') : t('common.save')}
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-4 space-y-4">
+          <div>
+            <h3 className="text-sm font-medium text-white">{t('violations.banhammer.nodePolicies.title')}</h3>
+            <p className="text-xs text-dark-300 mt-0.5">{t('violations.banhammer.nodePolicies.description')}</p>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <p className="text-xs text-dark-300">{t('violations.banhammer.nodePolicies.nodes')}</p>
+              {isNodesLoading || isPoliciesLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <Skeleton key={index} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : nodes.length === 0 ? (
+                <div className="rounded-md border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/40 p-3 text-sm text-dark-300">
+                  {t('violations.banhammer.nodePolicies.noNodes')}
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-[320px] overflow-y-auto pr-1">
+                  {nodes.map((node) => {
+                    const nodePolicy = nodePoliciesByUuid[node.uuid]
+                    return (
+                      <button
+                        key={node.uuid}
+                        type="button"
+                        onClick={() => setSelectedNodeUuid(node.uuid)}
+                        className={cn(
+                          'w-full rounded-lg border px-3 py-2 text-left transition-colors',
+                          selectedNodeUuid === node.uuid
+                            ? 'border-primary-500/30 bg-primary-500/10'
+                            : 'border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/30 hover:border-[var(--glass-border)]/40',
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm text-white truncate">{node.name}</p>
+                            <p className="text-[11px] text-dark-300 truncate">{node.address}:{node.port}</p>
+                          </div>
+                          <Badge variant={!nodePolicy ? 'outline' : nodePolicy.is_enabled ? 'success' : 'secondary'}>
+                            {!nodePolicy
+                              ? t('violations.banhammer.nodePolicies.noPolicy')
+                              : nodePolicy.is_enabled
+                                ? t('violations.banhammer.nodePolicies.enabled')
+                                : t('violations.banhammer.nodePolicies.disabled')}
+                          </Badge>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              {selectedNode ? (
+                <>
+                  <div className="rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/40 px-3 py-2.5">
+                    <p className="text-sm text-white">{selectedNode.name}</p>
+                    <p className="text-xs text-dark-300">{selectedNode.address}:{selectedNode.port}</p>
+                  </div>
+
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/40 px-3 py-2.5">
+                    <span className="text-sm text-dark-100">{t('violations.banhammer.nodePolicies.enable')}</span>
+                    <input
+                      type="checkbox"
+                      checked={policyForm.is_enabled}
+                      onChange={(e) => setPolicyForm((prev) => ({ ...prev, is_enabled: e.target.checked }))}
+                      disabled={!canEdit || savePolicyMutation.isPending}
+                      className="h-4 w-4 rounded border-[var(--glass-border)] bg-[var(--glass-bg)] text-primary-500 focus:ring-primary-500/40"
+                    />
+                  </label>
+
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <label className="text-xs text-dark-200">{t('violations.banhammer.nodePolicies.allowedConnectionTypes')}</label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="text-xs text-primary-400 hover:underline disabled:opacity-50"
+                          disabled={!canEdit || savePolicyMutation.isPending}
+                          onClick={() => setPolicyForm((prev) => ({
+                            ...prev,
+                            expected_connection_types: [...NODE_NETWORK_POLICY_CONNECTION_TYPES],
+                          }))}
+                        >
+                          {t('nodes.networkPolicy.selectAll')}
+                        </button>
+                        <span className="text-dark-400">·</span>
+                        <button
+                          type="button"
+                          className="text-xs text-primary-400 hover:underline disabled:opacity-50"
+                          disabled={!canEdit || savePolicyMutation.isPending}
+                          onClick={() => setPolicyForm((prev) => ({ ...prev, expected_connection_types: [] }))}
+                        >
+                          {t('nodes.networkPolicy.clearAll')}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      {NODE_NETWORK_POLICY_CONNECTION_TYPES.map((type) => {
+                        const checked = policyForm.expected_connection_types.includes(type)
+                        return (
+                          <label
+                            key={type}
+                            className={cn(
+                              'flex items-center gap-2 rounded-md border px-2.5 py-2 text-sm',
+                              checked
+                                ? 'border-primary-500/30 bg-primary-500/10 text-primary-300'
+                                : 'border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/30 text-dark-100',
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleConnectionType(type)}
+                              disabled={!canEdit || savePolicyMutation.isPending}
+                              className="h-4 w-4 rounded border-[var(--glass-border)] bg-[var(--glass-bg)] text-primary-500 focus:ring-primary-500/40"
+                            />
+                            <span>{t(formatNodePolicyType(type))}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                    {policyForm.is_enabled && policyForm.expected_connection_types.length === 0 && (
+                      <p className="text-[11px] text-yellow-400 mt-1">
+                        {t('violations.banhammer.nodePolicies.allowedConnectionTypesRequired')}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-dark-200 mb-1">{t('violations.banhammer.nodePolicies.violationScore')}</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={policyForm.violation_score}
+                        onChange={(e) => setPolicyForm((prev) => ({ ...prev, violation_score: e.target.value }))}
+                        disabled={!canEdit || savePolicyMutation.isPending}
+                        className="flex h-10 w-full rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                      />
+                    </div>
+                    <label className="flex items-center justify-between gap-3 rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/40 px-3 py-2.5 self-end">
+                      <span className="text-sm text-dark-100">{t('violations.banhammer.nodePolicies.strictMode')}</span>
+                      <input
+                        type="checkbox"
+                        checked={policyForm.strict_mode}
+                        onChange={(e) => setPolicyForm((prev) => ({ ...prev, strict_mode: e.target.checked }))}
+                        disabled={!canEdit || savePolicyMutation.isPending}
+                        className="h-4 w-4 rounded border-[var(--glass-border)] bg-[var(--glass-bg)] text-primary-500 focus:ring-primary-500/40"
+                      />
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-dark-200 mb-1">{t('violations.banhammer.nodePolicies.reasonTemplate')}</label>
+                    <Textarea
+                      value={policyForm.reason_template}
+                      onChange={(e) => setPolicyForm((prev) => ({ ...prev, reason_template: e.target.value }))}
+                      placeholder={t('violations.banhammer.nodePolicies.reasonTemplatePlaceholder')}
+                      disabled={!canEdit || savePolicyMutation.isPending}
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Button
+                      onClick={() => {
+                        if (!selectedNodeUuid) return
+                        savePolicyMutation.mutate({ nodeUuid: selectedNodeUuid, form: policyForm })
+                      }}
+                      disabled={!canSavePolicy || savePolicyMutation.isPending}
+                    >
+                      {savePolicyMutation.isPending ? t('common.saving') : t('common.save')}
+                    </Button>
+                    {selectedNodePolicy && (
+                      <Button
+                        variant="destructive"
+                        onClick={() => deletePolicyMutation.mutate(selectedNodeUuid)}
+                        disabled={!canEdit || deletePolicyMutation.isPending}
+                      >
+                        {deletePolicyMutation.isPending ? t('common.saving') : t('violations.banhammer.nodePolicies.delete')}
+                      </Button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-md border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/40 p-3 text-sm text-dark-300">
+                  {t('violations.banhammer.nodePolicies.selectNode')}
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div>
+            <h3 className="text-sm font-medium text-white">{t('violations.banhammer.events.title')}</h3>
+            <p className="text-xs text-dark-300 mt-0.5">{t('violations.banhammer.events.description')}</p>
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border border-[var(--glass-border)]/20">
+            <table className="w-full text-sm">
+              <thead className="bg-[var(--glass-bg)]/70">
+                <tr className="text-left text-xs text-dark-300">
+                  <th className="px-3 py-2">{t('violations.banhammer.events.columns.time')}</th>
+                  <th className="px-3 py-2">{t('violations.banhammer.events.columns.action')}</th>
+                  <th className="px-3 py-2">{t('violations.banhammer.events.columns.user')}</th>
+                  <th className="px-3 py-2">{t('violations.banhammer.events.columns.node')}</th>
+                  <th className="px-3 py-2">{t('violations.banhammer.events.columns.reason')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {isEventsLoading ? (
+                  Array.from({ length: 4 }).map((_, index) => (
+                    <tr key={index} className="border-t border-[var(--glass-border)]/20">
+                      <td className="px-3 py-2" colSpan={5}>
+                        <Skeleton className="h-5 w-full" />
+                      </td>
+                    </tr>
+                  ))
+                ) : events.length === 0 ? (
+                  <tr className="border-t border-[var(--glass-border)]/20">
+                    <td className="px-3 py-5 text-center text-dark-300" colSpan={5}>
+                      {t('violations.banhammer.events.empty')}
+                    </td>
+                  </tr>
+                ) : (
+                  events.map((event: BanhammerEventRecord, index) => {
+                    const row = event as Record<string, unknown>
+                    const rowKey = `${toDisplayText(getRecordValue(row, ['id', 'event_id']))}-${index}`
+                    const rawTime = getRecordValue(row, ['created_at', 'detected_at', 'event_at', 'timestamp'])
+                    const time = typeof rawTime === 'string' ? formatDate(rawTime) : toDisplayText(rawTime)
+                    const action = toDisplayText(getRecordValue(row, ['action', 'event_type', 'type', 'stage']))
+                    const user = toDisplayText(getRecordValue(row, ['username', 'email', 'user_uuid', 'user_id']))
+                    const details = row.details as Record<string, unknown> | undefined
+                    const mismatchNode = (() => {
+                      const rawMismatches = details?.mismatches
+                      if (!Array.isArray(rawMismatches) || rawMismatches.length === 0) return null
+                      const first = rawMismatches[0]
+                      if (!first || typeof first !== 'object') return null
+                      return (first as Record<string, unknown>).node_uuid ?? null
+                    })()
+                    const node = toDisplayText(
+                      getRecordValue(
+                        row,
+                        ['node_name', 'node_uuid'],
+                      ) ?? mismatchNode,
+                    )
+                    const reason = toDisplayText(getRecordValue(row, ['reason', 'message', 'description']))
+                    return (
+                      <tr key={rowKey} className="border-t border-[var(--glass-border)]/20">
+                        <td className="px-3 py-2 text-dark-200 whitespace-nowrap">{time}</td>
+                        <td className="px-3 py-2 text-white">{action}</td>
+                        <td className="px-3 py-2 text-dark-100">{user}</td>
+                        <td className="px-3 py-2 text-dark-100">{node}</td>
+                        <td className="px-3 py-2 text-dark-200 max-w-[320px] truncate">{reason}</td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div>
+            <h3 className="text-sm font-medium text-white">{t('violations.banhammer.states.title')}</h3>
+            <p className="text-xs text-dark-300 mt-0.5">{t('violations.banhammer.states.description')}</p>
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border border-[var(--glass-border)]/20">
+            <table className="w-full text-sm">
+              <thead className="bg-[var(--glass-bg)]/70">
+                <tr className="text-left text-xs text-dark-300">
+                  <th className="px-3 py-2">{t('violations.banhammer.states.columns.user')}</th>
+                  <th className="px-3 py-2">{t('violations.banhammer.states.columns.stage')}</th>
+                  <th className="px-3 py-2">{t('violations.banhammer.states.columns.warnings')}</th>
+                  <th className="px-3 py-2">{t('violations.banhammer.states.columns.blockedUntil')}</th>
+                  <th className="px-3 py-2">{t('violations.banhammer.states.columns.updatedAt')}</th>
+                  <th className="px-3 py-2">{t('violations.banhammer.states.columns.node')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {isStatesLoading ? (
+                  Array.from({ length: 4 }).map((_, index) => (
+                    <tr key={index} className="border-t border-[var(--glass-border)]/20">
+                      <td className="px-3 py-2" colSpan={6}>
+                        <Skeleton className="h-5 w-full" />
+                      </td>
+                    </tr>
+                  ))
+                ) : states.length === 0 ? (
+                  <tr className="border-t border-[var(--glass-border)]/20">
+                    <td className="px-3 py-5 text-center text-dark-300" colSpan={6}>
+                      {t('violations.banhammer.states.empty')}
+                    </td>
+                  </tr>
+                ) : (
+                  states.map((state: BanhammerStateRecord, index) => {
+                    const row = state as Record<string, unknown>
+                    const rowKey = `${toDisplayText(getRecordValue(row, ['id', 'user_uuid', 'user_id']))}-${index}`
+                    const user = toDisplayText(getRecordValue(row, ['username', 'email', 'user_uuid', 'user_id']))
+                    const stage = toDisplayText(getRecordValue(row, ['block_stage', 'stage', 'current_stage', 'status', 'action']))
+                    const warnings = toDisplayText(getRecordValue(row, ['warning_count', 'warnings', 'warnings_count']))
+                    const rawBlockedUntil = getRecordValue(row, ['blocked_until', 'blocked_till', 'blocked_until_at', 'expires_at'])
+                    const blockedUntil = typeof rawBlockedUntil === 'string' ? formatDate(rawBlockedUntil) : toDisplayText(rawBlockedUntil)
+                    const rawUpdatedAt = getRecordValue(row, ['updated_at', 'created_at', 'changed_at'])
+                    const updatedAt = typeof rawUpdatedAt === 'string' ? formatDate(rawUpdatedAt) : toDisplayText(rawUpdatedAt)
+                    const node = toDisplayText(getRecordValue(row, ['last_node_uuid', 'node_name', 'node_uuid']))
+
+                    return (
+                      <tr key={rowKey} className="border-t border-[var(--glass-border)]/20">
+                        <td className="px-3 py-2 text-dark-100">{user}</td>
+                        <td className="px-3 py-2 text-white">{stage}</td>
+                        <td className="px-3 py-2 text-dark-100">{warnings}</td>
+                        <td className="px-3 py-2 text-dark-200 whitespace-nowrap">{blockedUntil}</td>
+                        <td className="px-3 py-2 text-dark-200 whitespace-nowrap">{updatedAt}</td>
+                        <td className="px-3 py-2 text-dark-100">{node}</td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 // ══════════════════════════════════════════════════════════════════
 // HWID Blacklist Tab
 // ══════════════════════════════════════════════════════════════════
@@ -1983,7 +2668,7 @@ function ViolationSkeleton() {
 
 // ── Main page component ──────────────────────────────────────────
 
-type Tab = 'all' | 'pending' | 'top' | 'reports' | 'whitelist' | 'hwid_blacklist'
+type Tab = 'all' | 'pending' | 'top' | 'reports' | 'whitelist' | 'hwid_blacklist' | 'banhammer'
 
 export default function Violations() {
   const { t } = useTranslation()
@@ -1995,7 +2680,7 @@ export default function Violations() {
   const getP = (k: string, d: string) => searchParams.get(k) ?? d
   const getN = (k: string, d: number) => { const v = searchParams.get(k); return v !== null ? (Number(v) || d) : d }
 
-  const validTabs: Tab[] = ['all', 'pending', 'top', 'reports', 'whitelist', 'hwid_blacklist']
+  const validTabs: Tab[] = ['all', 'pending', 'top', 'reports', 'whitelist', 'hwid_blacklist', 'banhammer']
   const rawTab = getP('tab', 'all') as Tab
   const tab = validTabs.includes(rawTab) ? rawTab : 'all'
   const page = getN('page', 1)
@@ -2581,6 +3266,7 @@ export default function Violations() {
           { key: 'all' as Tab, label: t('violations.tabs.all'), count: stats?.total },
           { key: 'pending' as Tab, label: t('violations.tabs.pending'), count: undefined },
           { key: 'top' as Tab, label: t('violations.tabs.topViolators'), count: undefined },
+          { key: 'banhammer' as Tab, label: t('violations.tabs.banhammer'), count: undefined },
           { key: 'whitelist' as Tab, label: t('violations.whitelist.tab'), count: undefined },
           { key: 'hwid_blacklist' as Tab, label: t('violations.hwidBlacklist.tab'), count: undefined },
           { key: 'reports' as Tab, label: t('violations.tabs.reports'), count: undefined },
@@ -2617,6 +3303,8 @@ export default function Violations() {
         />
       ) : tab === 'hwid_blacklist' ? (
         <HwidBlacklistTab />
+      ) : tab === 'banhammer' ? (
+        <BanhammerTab />
       ) : tab === 'whitelist' ? (
         <WhitelistTab />
       ) : (

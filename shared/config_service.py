@@ -434,6 +434,15 @@ DEFAULT_CONFIG_DEFINITIONS: List[Dict[str, Any]] = [
         "sort_order": 8,
     },
     {
+        "key": "violations_analyzer_node_policy",
+        "value_type": "bool",
+        "category": "violations",
+        "display_name": "Node policy анализатор",
+        "description": "Вклад node network policy в anti-abuse score (для Banhammer рекомендуется выключено)",
+        "default_value": "false",
+        "sort_order": 9,
+    },
+    {
         "key": "violations_max_simultaneous_ips",
         "value_type": "int",
         "category": "violations",
@@ -543,6 +552,56 @@ DEFAULT_CONFIG_DEFINITIONS: List[Dict[str, Any]] = [
         "default_value": "[]",
         "sort_order": 31,
     },
+    {
+        "key": "banhammer_enabled",
+        "value_type": "bool",
+        "category": "violations",
+        "subcategory": "banhammer",
+        "display_name": "Banhammer включён",
+        "description": "Независимая система Banhammer: предупреждения и ступенчатая блокировка по node policy mismatch",
+        "default_value": "false",
+        "sort_order": 32,
+    },
+    {
+        "key": "banhammer_warning_limit",
+        "value_type": "int",
+        "category": "violations",
+        "subcategory": "banhammer",
+        "display_name": "Banhammer: лимит предупреждений",
+        "description": "После скольких предупреждений применять блокировку",
+        "default_value": "3",
+        "sort_order": 33,
+    },
+    {
+        "key": "banhammer_warning_cooldown_seconds",
+        "value_type": "int",
+        "category": "violations",
+        "subcategory": "banhammer",
+        "display_name": "Banhammer: кулдаун предупреждений (сек)",
+        "description": "Минимальный интервал между предупреждениями для одного пользователя",
+        "default_value": "60",
+        "sort_order": 34,
+    },
+    {
+        "key": "banhammer_block_stages_minutes",
+        "value_type": "json",
+        "category": "violations",
+        "subcategory": "banhammer",
+        "display_name": "Banhammer: этапы блокировки (мин)",
+        "description": "Массив длительностей блокировки по этапам, например [15,60,360,720,1440]",
+        "default_value": "[15, 60, 360, 720, 1440]",
+        "sort_order": 35,
+    },
+    {
+        "key": "banhammer_warning_template",
+        "value_type": "string",
+        "category": "violations",
+        "subcategory": "banhammer",
+        "display_name": "Banhammer: шаблон предупреждения",
+        "description": "Текст предупреждения при нарушении node policy",
+        "default_value": "Banhammer warning: node network policy mismatch detected. Reconnect using an allowed network type.",
+        "sort_order": 36,
+    },
 
     # === TORRENT DETECTION ===
     {
@@ -575,7 +634,6 @@ DEFAULT_CONFIG_DEFINITIONS: List[Dict[str, Any]] = [
         "default_value": "30",
         "sort_order": 42,
     },
-
     # === MAILSERVER ===
     {
         "key": "mailserver_enabled",
