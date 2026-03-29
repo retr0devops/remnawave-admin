@@ -81,6 +81,9 @@ services:
 
   web-backend:
     image: ghcr.io/case211/remnawave-admin-web-backend:latest
+    build:
+      context: .
+      dockerfile: ./web/backend/Dockerfile
     container_name: remnawave-web-backend
     restart: unless-stopped
     init: true
@@ -116,6 +119,9 @@ services:
 
   web-frontend:
     image: ghcr.io/case211/remnawave-admin-web-frontend:latest
+    build:
+      context: ./web/frontend
+      dockerfile: ./web/frontend/Dockerfile
     container_name: remnawave-web-frontend
     restart: unless-stopped
     init: true

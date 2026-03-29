@@ -178,6 +178,12 @@ docker compose --profile web up -d
 
 Веб-панель будет доступна на портах: **frontend :3000**, **backend :8081**.
 
+После `git pull` (чтобы точно применились изменения backend/frontend):
+
+```bash
+docker compose up -d --build web-backend web-frontend
+```
+
 > 📖 Подробнее о настройке домена и реверс-прокси: [web/README.md](web/README.md)
 
 ---

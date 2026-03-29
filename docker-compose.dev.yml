@@ -79,6 +79,9 @@ services:
 
   web-backend:
     image: ghcr.io/case211/remnawave-admin-web-backend:dev
+    build:
+      context: .
+      dockerfile: ./web/backend/Dockerfile
     container_name: remnawave-web-backend
     restart: unless-stopped
     env_file:
@@ -106,6 +109,9 @@ services:
 
   web-frontend:
     image: ghcr.io/case211/remnawave-admin-web-frontend:dev
+    build:
+      context: ./web/frontend
+      dockerfile: ./web/frontend/Dockerfile
     container_name: remnawave-web-frontend
     restart: unless-stopped
     env_file:
