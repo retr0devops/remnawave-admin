@@ -5341,6 +5341,206 @@ class DatabaseService:
             logger.error("Error getting shared HWIDs for user %s: %s", user_uuid, e, exc_info=True)
             return []
 
+    # ==================== Node Network Policies ====================
+
+    async def list_node_network_policies(self) -> List[Dict[str, Any]]:
+        """List all node network policies."""
+        if not self.is_connected:
+            return []
+
+        try:
+            async with self.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT
+                        id,
+                        node_uuid,
+                        is_enabled,
+                        expected_connection_types,
+                        strict_mode,
+                        violation_score,
+                        reason_template,
+                        created_at,
+                        updated_at
+                    FROM node_network_policies
+                    ORDER BY updated_at DESC, node_uuid
+                    """
+                )
+                return [dict(r) for r in rows]
+        except Exception as e:
+            msg = str(e)
+            if "node_network_policies" in msg and "does not exist" in msg:
+                logger.debug("node_network_policies table does not exist yet")
+                return []
+            logger.error("Error listing node network policies: %s", e, exc_info=True)
+            return []
+
+    async def get_node_network_policy(self, node_uuid: str) -> Optional[Dict[str, Any]]:
+        """Get node network policy by node UUID."""
+        if not self.is_connected:
+            return None
+
+        try:
+            async with self.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT
+                        id,
+                        node_uuid,
+                        is_enabled,
+                        expected_connection_types,
+                        strict_mode,
+                        violation_score,
+                        reason_template,
+                        created_at,
+                        updated_at
+                    FROM node_network_policies
+                    WHERE node_uuid = $1::uuid
+                    """,
+                    node_uuid,
+                )
+                return dict(row) if row else None
+        except Exception as e:
+            msg = str(e)
+            if "node_network_policies" in msg and "does not exist" in msg:
+                logger.debug("node_network_policies table does not exist yet")
+                return None
+            logger.error("Error getting node network policy for %s: %s", node_uuid, e, exc_info=True)
+            return None
+
+    async def get_node_network_policies_by_node_uuids(self, node_uuids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Batch get node network policies by node UUID list."""
+        if not self.is_connected or not node_uuids:
+            return {}
+
+        uniq: list[str] = []
+        seen: set[str] = set()
+        for node_uuid in node_uuids:
+            value = str(node_uuid).strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            uniq.append(value)
+
+        if not uniq:
+            return {}
+
+        try:
+            async with self.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT
+                        id,
+                        node_uuid,
+                        is_enabled,
+                        expected_connection_types,
+                        strict_mode,
+                        violation_score,
+                        reason_template,
+                        created_at,
+                        updated_at
+                    FROM node_network_policies
+                    WHERE node_uuid = ANY($1::uuid[])
+                    """,
+                    uniq,
+                )
+                return {str(r["node_uuid"]): dict(r) for r in rows}
+        except Exception as e:
+            msg = str(e)
+            if "node_network_policies" in msg and "does not exist" in msg:
+                logger.debug("node_network_policies table does not exist yet")
+                return {}
+            logger.error("Error getting node network policies by UUIDs: %s", e, exc_info=True)
+            return {}
+
+    async def upsert_node_network_policy(
+        self,
+        node_uuid: str,
+        is_enabled: bool,
+        expected_connection_types: List[str],
+        strict_mode: bool = True,
+        violation_score: int = 70,
+        reason_template: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Create or update node network policy by node UUID."""
+        if not self.is_connected:
+            return None
+
+        try:
+            expected_json = json.dumps(expected_connection_types or [])
+            async with self.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO node_network_policies (
+                        node_uuid,
+                        is_enabled,
+                        expected_connection_types,
+                        strict_mode,
+                        violation_score,
+                        reason_template,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (
+                        $1::uuid,
+                        $2,
+                        $3::jsonb,
+                        $4,
+                        $5,
+                        $6,
+                        NOW(),
+                        NOW()
+                    )
+                    ON CONFLICT (node_uuid) DO UPDATE SET
+                        is_enabled = EXCLUDED.is_enabled,
+                        expected_connection_types = EXCLUDED.expected_connection_types,
+                        strict_mode = EXCLUDED.strict_mode,
+                        violation_score = EXCLUDED.violation_score,
+                        reason_template = EXCLUDED.reason_template,
+                        updated_at = NOW()
+                    RETURNING
+                        id,
+                        node_uuid,
+                        is_enabled,
+                        expected_connection_types,
+                        strict_mode,
+                        violation_score,
+                        reason_template,
+                        created_at,
+                        updated_at
+                    """,
+                    node_uuid,
+                    bool(is_enabled),
+                    expected_json,
+                    bool(strict_mode),
+                    int(violation_score),
+                    reason_template,
+                )
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error("Error upserting node network policy for %s: %s", node_uuid, e, exc_info=True)
+            return None
+
+    async def delete_node_network_policy(self, node_uuid: str) -> bool:
+        """Delete node network policy by node UUID."""
+        if not self.is_connected:
+            return False
+
+        try:
+            async with self.acquire() as conn:
+                result = await conn.execute(
+                    "DELETE FROM node_network_policies WHERE node_uuid = $1::uuid",
+                    node_uuid,
+                )
+                return result == "DELETE 1"
+        except Exception as e:
+            msg = str(e)
+            if "node_network_policies" in msg and "does not exist" in msg:
+                logger.debug("node_network_policies table does not exist yet")
+                return False
+            logger.error("Error deleting node network policy for %s: %s", node_uuid, e, exc_info=True)
+            return False
+
     # ==================== Blocked IPs ====================
 
     async def get_blocked_ips(

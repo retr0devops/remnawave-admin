@@ -96,6 +96,14 @@ class HwidScore:
 
 
 @dataclass
+class NodePolicyScore:
+    """Скор node-specific network policy анализа."""
+    score: float
+    reasons: List[str]
+    mismatched_nodes_count: int = 0
+
+
+@dataclass
 class ViolationScore:
     """Итоговый скор нарушения."""
     total: float
@@ -1732,6 +1740,118 @@ class HwidCrossAccountAnalyzer:
         )
 
 
+class NodePolicyAnalyzer:
+    """
+    Анализатор node-specific anti-abuse network policy.
+
+    Проверяет active connections пользователя на соответствие policy конкретной ноды:
+    - policy выбирается по node_uuid подключения;
+    - сравнивается фактический connection_type (из GeoIP enrichment) с allowed list;
+    - при mismatch начисляется policy.violation_score (один раз на ноду).
+    """
+
+    def __init__(self, db_service: DatabaseService):
+        self.db = db_service
+
+    async def analyze(
+        self,
+        connections: List[ActiveConnection],
+        ip_metadata_cache: Optional[Dict[str, IPMetadata]] = None,
+    ) -> NodePolicyScore:
+        if not connections or not self.db.is_connected:
+            return NodePolicyScore(score=0.0, reasons=[])
+
+        node_uuids: set[str] = set()
+        for conn in connections:
+            if conn.node_uuid:
+                node_uuids.add(str(conn.node_uuid))
+
+        if not node_uuids:
+            return NodePolicyScore(score=0.0, reasons=[])
+
+        try:
+            policies = await self.db.get_node_network_policies_by_node_uuids(list(node_uuids))
+        except Exception as e:
+            logger.debug("Node policy lookup failed: %s", e)
+            return NodePolicyScore(score=0.0, reasons=[])
+
+        if not policies:
+            return NodePolicyScore(score=0.0, reasons=[])
+
+        metadata_cache = ip_metadata_cache or {}
+        reasons: list[str] = []
+        score = 0.0
+        mismatched_nodes_count = 0
+
+        for node_uuid in sorted(node_uuids):
+            policy = policies.get(node_uuid)
+            if not policy:
+                continue
+            if not policy.get("is_enabled", True):
+                continue
+
+            expected_values = policy.get("expected_connection_types") or []
+            if isinstance(expected_values, str):
+                try:
+                    expected_values = json.loads(expected_values)
+                except Exception:
+                    expected_values = []
+
+            expected: set[str] = {
+                str(v).strip().lower()
+                for v in expected_values
+                if str(v).strip()
+            }
+            if not expected:
+                continue
+
+            mismatched_types: set[str] = set()
+            for conn in connections:
+                if str(conn.node_uuid or "") != node_uuid:
+                    continue
+
+                ip_str = str(conn.ip_address)
+                meta = metadata_cache.get(ip_str)
+                if not meta or not meta.connection_type:
+                    # No metadata/connection_type: skip without penalties.
+                    continue
+
+                actual_type = str(meta.connection_type).strip().lower()
+                if not actual_type:
+                    continue
+                if actual_type not in expected:
+                    mismatched_types.add(actual_type)
+
+            if not mismatched_types:
+                continue
+
+            mismatched_nodes_count += 1
+            violation_score = float(policy.get("violation_score", 0.0) or 0.0)
+            if violation_score > 0:
+                score += violation_score
+
+            expected_list = ", ".join(sorted(expected))
+            actual_list = ", ".join(sorted(mismatched_types))
+            base_reason = (
+                f"Node policy mismatch: node={node_uuid}, "
+                f"expected=[{expected_list}], actual={actual_list}"
+            )
+            reason_template = (policy.get("reason_template") or "").strip()
+            reason = f"{reason_template} | {base_reason}" if reason_template else base_reason
+            reasons.append(reason)
+
+            logger.info(
+                "Node policy mismatch detected: node=%s expected=%s actual=%s score=%.1f",
+                node_uuid, sorted(expected), sorted(mismatched_types), violation_score,
+            )
+
+        return NodePolicyScore(
+            score=min(score, 100.0),
+            reasons=reasons,
+            mismatched_nodes_count=mismatched_nodes_count,
+        )
+
+
 class IntelligentViolationDetector:
     """
     Система многофакторного анализа для детектирования нарушений.
@@ -1777,6 +1897,7 @@ class IntelligentViolationDetector:
         self.profile_analyzer = UserProfileAnalyzer(db_service)
         self.device_analyzer = DeviceFingerprintAnalyzer()
         self.hwid_analyzer = HwidCrossAccountAnalyzer(db_service)
+        self.node_policy_analyzer = NodePolicyAnalyzer(db_service)
     
     async def check_user(self, user_uuid: str, window_minutes: int = 60, excluded_analyzers: Optional[List[str]] = None) -> Optional[ViolationScore]:
         """
@@ -1881,6 +2002,12 @@ class IntelligentViolationDetector:
             # Анализируем кросс-аккаунт HWID
             hwid_score = await self.hwid_analyzer.analyze(user_uuid)
 
+            # Анализируем node-specific network policy (direct bonus signal)
+            node_policy_score = await self.node_policy_analyzer.analyze(
+                active_connections,
+                ip_metadata_cache=ip_metadata_cache,
+            )
+
             # Обнуляем скоры отключённых анализаторов (глобально через конфиг + per-user exclusions)
             _excluded = set(excluded_analyzers) if excluded_analyzers else set()
 
@@ -1896,6 +2023,8 @@ class IntelligentViolationDetector:
                 device_score = DeviceScore(score=0.0, reasons=[], unique_fingerprints_count=0, different_os_count=0)
             if not config_service.get("violations_analyzer_hwid", True) or "hwid" in _excluded:
                 hwid_score = HwidScore(score=0.0, reasons=[])
+            if not config_service.get("violations_analyzer_node_policy", True) or "node_policy" in _excluded:
+                node_policy_score = NodePolicyScore(score=0.0, reasons=[])
 
             # Вычисляем взвешенный скор
             raw_score = (
@@ -2020,6 +2149,20 @@ class IntelligentViolationDetector:
             elif hwid_score.score >= 65.0 and hwid_score.other_accounts_count >= 1:
                 raw_score = max(raw_score, 50.0)
 
+            # Node policy mismatch добавляет прямой вклад в итоговый score.
+            # Этот вклад не модифицируется ASN/гео эвристиками.
+            if node_policy_score.score > 0:
+                score_before_policy = raw_score
+                raw_score = min(100.0, raw_score + node_policy_score.score)
+                logger.info(
+                    "Applied node policy score bonus: %.2f -> %.2f (+%.2f), user=%s, mismatched_nodes=%d",
+                    score_before_policy,
+                    raw_score,
+                    node_policy_score.score,
+                    user_uuid,
+                    node_policy_score.mismatched_nodes_count,
+                )
+
             # --- Проверка экстремального абьюза (жёсткая блокировка) ---
             extreme_abuse_reasons = []
             hb_ips = config_service.get("violations_hard_block_ips", 50)
@@ -2068,7 +2211,8 @@ class IntelligentViolationDetector:
             # Вычисляем уверенность на основе количества сработавших факторов и силы сигналов
             active_factors = sum(1 for s in [
                 temporal_score.score, geo_score.score, asn_score.score,
-                profile_score.score, device_score.score, hwid_score.score
+                profile_score.score, device_score.score, hwid_score.score,
+                node_policy_score.score,
             ] if s > 0)
             data_quality = min(1.0, len(connection_history) / 10.0)  # Больше данных = выше уверенность
             score_factor = min(1.0, raw_score / 100.0)
@@ -2084,7 +2228,8 @@ class IntelligentViolationDetector:
                 asn_score.reasons +
                 profile_score.reasons +
                 device_score.reasons +
-                hwid_score.reasons
+                hwid_score.reasons +
+                node_policy_score.reasons
             ):
                 if reason not in seen_reasons:
                     seen_reasons.add(reason)
@@ -2099,6 +2244,7 @@ class IntelligentViolationDetector:
                     'profile': profile_score,
                     'device': device_score,
                     'hwid': hwid_score,
+                    'node_policy': node_policy_score,
                 },
                 recommended_action=recommended_action,
                 confidence=confidence,

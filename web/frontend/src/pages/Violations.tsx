@@ -245,6 +245,10 @@ function getConnectionTypeBadge(info: IPInfo, t: (key: string) => string): { lab
   return null
 }
 
+function isNodePolicyMismatchReason(reason: string): boolean {
+  return reason.toLowerCase().includes('node policy mismatch')
+}
+
 // ── Score bar component ──────────────────────────────────────────
 
 const ScoreBar = memo(function ScoreBar({ label, score, weight, icon }: { label: string; score: number; weight?: number; icon: React.ReactNode }) {
@@ -407,8 +411,17 @@ const ViolationCard = memo(function ViolationCard({
             {Array.isArray(violation.reasons) && violation.reasons.length > 0 && (
               <div className="space-y-0.5 mb-1">
                 {[...new Set(violation.reasons)].slice(0, 2).map((reason, i) => (
-                  <p key={i} className="text-xs text-dark-200 flex items-start gap-1">
-                    <AlertTriangle className="w-3 h-3 text-yellow-400/70 mt-0.5 flex-shrink-0" />
+                  <p
+                    key={i}
+                    className={cn(
+                      "text-xs flex items-start gap-1",
+                      isNodePolicyMismatchReason(reason) ? "text-amber-300" : "text-dark-200"
+                    )}
+                  >
+                    <AlertTriangle className={cn(
+                      "w-3 h-3 mt-0.5 flex-shrink-0",
+                      isNodePolicyMismatchReason(reason) ? "text-amber-400" : "text-yellow-400/70"
+                    )} />
                     <span className="line-clamp-1">{reason}</span>
                   </p>
                 ))}
@@ -753,9 +766,23 @@ function ViolationDetailPanel({
               </h3>
               <ul className="space-y-2">
                 {uniqueReasons.map(([reason, count], i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm">
-                    <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
-                    <span className="text-dark-100">
+                  <li
+                    key={i}
+                    className={cn(
+                      "flex items-start gap-2 text-sm rounded-lg px-2 py-1",
+                      isNodePolicyMismatchReason(reason) && "bg-amber-500/10 border border-amber-500/20"
+                    )}
+                  >
+                    <AlertTriangle
+                      className={cn(
+                        "w-4 h-4 mt-0.5 flex-shrink-0",
+                        isNodePolicyMismatchReason(reason) ? "text-amber-400" : "text-yellow-400"
+                      )}
+                    />
+                    <span className={cn(
+                      "text-dark-100",
+                      isNodePolicyMismatchReason(reason) && "text-amber-200"
+                    )}>
                       {reason}
                       {count > 1 && (
                         <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0">

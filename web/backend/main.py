@@ -56,6 +56,7 @@ from web.backend.api.v2 import api_keys as api_keys_api
 from web.backend.api.v2 import blocked_ips as blocked_ips_api
 from web.backend.api.v2 import webhooks as webhooks_api
 from web.backend.api.v2 import squads as squads_api
+from web.backend.api.v2 import node_policies as node_policies_api
 from web.backend.api.v2.bedolaga import router as bedolaga_router
 from web.backend.api.v3 import public as public_api_v3
 
@@ -707,6 +708,7 @@ def create_app() -> FastAPI:
     app.include_router(blocked_ips_api.router, prefix="/api/v2/blocked-ips", tags=["blocked-ips"])
     app.include_router(webhooks_api.router, prefix="/api/v2/webhooks", tags=["webhooks"])
     app.include_router(squads_api.router, prefix="/api/v2/squads", tags=["squads"])
+    app.include_router(node_policies_api.router, prefix="/api/v2/node-policies", tags=["node-policies"])
     app.include_router(bedolaga_router, prefix="/api/v2/bedolaga", tags=["bedolaga"])
 
     # Public API v3 — enabled via EXTERNAL_API_ENABLED=true
