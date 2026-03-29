@@ -79,6 +79,22 @@ CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name);
 CREATE INDEX IF NOT EXISTS idx_nodes_is_connected ON nodes(is_connected);
 CREATE INDEX IF NOT EXISTS idx_nodes_agent_token ON nodes(agent_token) WHERE agent_token IS NOT NULL;
 
+-- Node-specific anti-abuse network policies
+CREATE TABLE IF NOT EXISTS node_network_policies (
+    id BIGSERIAL PRIMARY KEY,
+    node_uuid UUID NOT NULL UNIQUE REFERENCES nodes(uuid) ON DELETE CASCADE,
+    is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    expected_connection_types JSONB NOT NULL DEFAULT '[]'::jsonb,
+    strict_mode BOOLEAN NOT NULL DEFAULT TRUE,
+    violation_score INTEGER NOT NULL DEFAULT 70 CHECK (violation_score >= 0 AND violation_score <= 100),
+    reason_template TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_network_policies_enabled
+ON node_network_policies(is_enabled) WHERE is_enabled = TRUE;
+
 -- Снимки метрик нод (для истории)
 CREATE TABLE IF NOT EXISTS node_metrics_snapshots (
     id BIGSERIAL PRIMARY KEY,
@@ -1258,6 +1274,98 @@ class DatabaseService:
                 uuid
             )
             return _db_row_to_api_format(row) if row else None
+
+    # ==================== Node Network Policies ====================
+
+    async def list_node_network_policies(self) -> List[Dict[str, Any]]:
+        """List all node network policies."""
+        if not self.is_connected:
+            return []
+        async with self.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, node_uuid, is_enabled, expected_connection_types,
+                       strict_mode, violation_score, reason_template,
+                       created_at, updated_at
+                FROM node_network_policies
+                ORDER BY created_at DESC
+                """
+            )
+            return [dict(r) for r in rows]
+
+    async def get_node_network_policy(self, node_uuid: str) -> Optional[Dict[str, Any]]:
+        """Get node network policy by node UUID."""
+        if not self.is_connected:
+            return None
+        async with self.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, node_uuid, is_enabled, expected_connection_types,
+                       strict_mode, violation_score, reason_template,
+                       created_at, updated_at
+                FROM node_network_policies
+                WHERE node_uuid = $1::uuid
+                """,
+                node_uuid,
+            )
+            return dict(row) if row else None
+
+    async def upsert_node_network_policy(
+        self,
+        node_uuid: str,
+        is_enabled: bool,
+        expected_connection_types: List[str],
+        strict_mode: bool,
+        violation_score: int,
+        reason_template: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Create or update node network policy."""
+        if not self.is_connected:
+            return None
+        async with self.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO node_network_policies (
+                    node_uuid,
+                    is_enabled,
+                    expected_connection_types,
+                    strict_mode,
+                    violation_score,
+                    reason_template,
+                    created_at,
+                    updated_at
+                )
+                VALUES ($1::uuid, $2, $3::jsonb, $4, $5, $6, NOW(), NOW())
+                ON CONFLICT (node_uuid) DO UPDATE SET
+                    is_enabled = EXCLUDED.is_enabled,
+                    expected_connection_types = EXCLUDED.expected_connection_types,
+                    strict_mode = EXCLUDED.strict_mode,
+                    violation_score = EXCLUDED.violation_score,
+                    reason_template = EXCLUDED.reason_template,
+                    updated_at = NOW()
+                RETURNING id, node_uuid, is_enabled, expected_connection_types,
+                          strict_mode, violation_score, reason_template,
+                          created_at, updated_at
+                """,
+                node_uuid,
+                bool(is_enabled),
+                json.dumps(expected_connection_types or []),
+                bool(strict_mode),
+                int(violation_score),
+                reason_template,
+            )
+            return dict(row) if row else None
+
+    async def delete_node_network_policy(self, node_uuid: str) -> bool:
+        """Delete node network policy by node UUID."""
+        if not self.is_connected:
+            return False
+        async with self.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM node_network_policies WHERE node_uuid = $1::uuid",
+                node_uuid,
+            )
+            return result == "DELETE 1"
     
     async def get_nodes_by_uuids(self, uuids: list[str]) -> Dict[str, Dict[str, Any]]:
         """Get multiple nodes by UUIDs in a single query.

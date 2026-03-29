@@ -96,6 +96,14 @@ class HwidScore:
 
 
 @dataclass
+class NodePolicyScore:
+    """Скор node-specific network policy."""
+    score: float
+    reasons: List[str]
+    matched_nodes: int = 0
+
+
+@dataclass
 class ViolationScore:
     """Итоговый скор нарушения."""
     total: float
@@ -1732,6 +1740,77 @@ class HwidCrossAccountAnalyzer:
         )
 
 
+class NodePolicyAnalyzer:
+    """Node-specific anti-abuse policy analyzer."""
+
+    def __init__(self, db_service: DatabaseService):
+        self.db = db_service
+
+    async def analyze(
+        self,
+        connections: List[ActiveConnection],
+        ip_metadata_cache: Optional[Dict[str, IPMetadata]] = None,
+    ) -> NodePolicyScore:
+        if not self.db.is_connected or not connections:
+            return NodePolicyScore(score=0.0, reasons=[])
+
+        seen_reason_keys: set[tuple[str, str]] = set()
+        reasons: List[str] = []
+        max_score = 0.0
+        matched_nodes = 0
+
+        for conn in connections:
+            node_uuid = str(conn.node_uuid) if conn.node_uuid else None
+            if not node_uuid:
+                continue
+
+            policy = await self.db.get_node_network_policy(node_uuid)
+            if not policy or not policy.get("is_enabled"):
+                continue
+
+            expected_raw = policy.get("expected_connection_types") or []
+            expected_types = [str(v).strip().lower() for v in expected_raw if str(v).strip()]
+            if not expected_types:
+                continue
+
+            metadata = (ip_metadata_cache or {}).get(str(conn.ip_address))
+            actual_type = (metadata.connection_type if metadata else None) or None
+            if not actual_type:
+                logger.debug(
+                    "Node policy skipped: missing connection_type for user=%s node=%s ip=%s",
+                    conn.user_uuid, node_uuid, conn.ip_address
+                )
+                continue
+
+            actual_type = str(actual_type).strip().lower()
+            if actual_type in expected_types:
+                continue
+
+            matched_nodes += 1
+            violation_score = float(policy.get("violation_score") or 0.0)
+            max_score = max(max_score, min(violation_score, 100.0))
+
+            reason_key = (node_uuid, actual_type)
+            if reason_key in seen_reason_keys:
+                continue
+            seen_reason_keys.add(reason_key)
+
+            reason_template = (policy.get("reason_template") or "").strip()
+            if reason_template:
+                reasons.append(reason_template)
+            else:
+                reasons.append(
+                    f"Node policy mismatch: node={node_uuid}, expected={expected_types}, actual={actual_type}"
+                )
+
+        if matched_nodes:
+            logger.info(
+                "Node policy analyzer matched %d connection(s), score=%.1f",
+                matched_nodes, max_score
+            )
+        return NodePolicyScore(score=max_score, reasons=reasons, matched_nodes=matched_nodes)
+
+
 class IntelligentViolationDetector:
     """
     Система многофакторного анализа для детектирования нарушений.
@@ -1741,12 +1820,13 @@ class IntelligentViolationDetector:
     
     # Веса факторов
     WEIGHTS = {
-        'temporal': 0.20,      # Временной паттерн (было 0.25)
-        'geo': 0.20,           # География (было 0.25)
-        'asn': 0.10,           # Тип провайдера (было 0.15)
-        'profile': 0.15,       # Отклонение от профиля (было 0.20)
-        'device': 0.10,        # Fingerprint устройств (было 0.15)
-        'hwid': 0.25,          # Кросс-аккаунт HWID (сильный сигнал)
+        'temporal': 0.18,      # Временной паттерн
+        'geo': 0.18,           # География
+        'asn': 0.09,           # Тип провайдера
+        'profile': 0.13,       # Отклонение от профиля
+        'device': 0.10,        # Fingerprint устройств
+        'hwid': 0.20,          # Кросс-аккаунт HWID (сильный сигнал)
+        'node_policy': 0.12,   # Node-specific network policy
     }
     
     # Пороги для действий
@@ -1777,6 +1857,7 @@ class IntelligentViolationDetector:
         self.profile_analyzer = UserProfileAnalyzer(db_service)
         self.device_analyzer = DeviceFingerprintAnalyzer()
         self.hwid_analyzer = HwidCrossAccountAnalyzer(db_service)
+        self.node_policy_analyzer = NodePolicyAnalyzer(db_service)
     
     async def check_user(self, user_uuid: str, window_minutes: int = 60, excluded_analyzers: Optional[List[str]] = None) -> Optional[ViolationScore]:
         """
@@ -1880,6 +1961,7 @@ class IntelligentViolationDetector:
 
             # Анализируем кросс-аккаунт HWID
             hwid_score = await self.hwid_analyzer.analyze(user_uuid)
+            node_policy_score = await self.node_policy_analyzer.analyze(active_connections, ip_metadata_cache)
 
             # Обнуляем скоры отключённых анализаторов (глобально через конфиг + per-user exclusions)
             _excluded = set(excluded_analyzers) if excluded_analyzers else set()
@@ -1896,6 +1978,8 @@ class IntelligentViolationDetector:
                 device_score = DeviceScore(score=0.0, reasons=[], unique_fingerprints_count=0, different_os_count=0)
             if not config_service.get("violations_analyzer_hwid", True) or "hwid" in _excluded:
                 hwid_score = HwidScore(score=0.0, reasons=[])
+            if "node_policy" in _excluded:
+                node_policy_score = NodePolicyScore(score=0.0, reasons=[])
 
             # Вычисляем взвешенный скор
             raw_score = (
@@ -1904,7 +1988,8 @@ class IntelligentViolationDetector:
                 asn_score.score * self.WEIGHTS['asn'] +
                 profile_score.score * self.WEIGHTS['profile'] +
                 device_score.score * self.WEIGHTS['device'] +
-                hwid_score.score * self.WEIGHTS['hwid']
+                hwid_score.score * self.WEIGHTS['hwid'] +
+                node_policy_score.score * self.WEIGHTS['node_policy']
             )
             
             # Применяем модификаторы на основе типов провайдеров
@@ -2068,7 +2153,7 @@ class IntelligentViolationDetector:
             # Вычисляем уверенность на основе количества сработавших факторов и силы сигналов
             active_factors = sum(1 for s in [
                 temporal_score.score, geo_score.score, asn_score.score,
-                profile_score.score, device_score.score, hwid_score.score
+                profile_score.score, device_score.score, hwid_score.score, node_policy_score.score
             ] if s > 0)
             data_quality = min(1.0, len(connection_history) / 10.0)  # Больше данных = выше уверенность
             score_factor = min(1.0, raw_score / 100.0)
@@ -2084,7 +2169,8 @@ class IntelligentViolationDetector:
                 asn_score.reasons +
                 profile_score.reasons +
                 device_score.reasons +
-                hwid_score.reasons
+                hwid_score.reasons +
+                node_policy_score.reasons
             ):
                 if reason not in seen_reasons:
                     seen_reasons.add(reason)
@@ -2099,6 +2185,7 @@ class IntelligentViolationDetector:
                     'profile': profile_score,
                     'device': device_score,
                     'hwid': hwid_score,
+                    'node_policy': node_policy_score,
                 },
                 recommended_action=recommended_action,
                 confidence=confidence,

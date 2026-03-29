@@ -56,6 +56,7 @@ from web.backend.api.v2 import api_keys as api_keys_api
 from web.backend.api.v2 import blocked_ips as blocked_ips_api
 from web.backend.api.v2 import webhooks as webhooks_api
 from web.backend.api.v2 import squads as squads_api
+from web.backend.api.v2 import node_policies as node_policies_api
 from web.backend.api.v2.bedolaga import router as bedolaga_router
 from web.backend.api.v3 import public as public_api_v3
 
@@ -677,6 +678,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/api/v2/auth", tags=["auth"])
     app.include_router(users.router, prefix="/api/v2/users", tags=["users"])
     app.include_router(nodes.router, prefix="/api/v2/nodes", tags=["nodes"])
+    app.include_router(node_policies_api.router, prefix="/api/v2/node-policies", tags=["node-policies"])
     app.include_router(analytics.router, prefix="/api/v2/analytics", tags=["analytics"])
     app.include_router(violations.router, prefix="/api/v2/violations", tags=["violations"])
     app.include_router(hosts.router, prefix="/api/v2/hosts", tags=["hosts"])

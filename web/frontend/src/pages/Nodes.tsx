@@ -79,6 +79,28 @@ interface NodeEditFormData {
   port: string
 }
 
+const NODE_POLICY_CONNECTION_TYPES = [
+  'mobile',
+  'mobile_isp',
+  'fixed',
+  'isp',
+  'regional_isp',
+  'residential',
+  'hosting',
+  'vpn',
+  'business',
+  'datacenter',
+] as const
+
+interface NodePolicy {
+  node_uuid: string
+  is_enabled: boolean
+  expected_connection_types: string[]
+  strict_mode: boolean
+  violation_score: number
+  reason_template: string | null
+}
+
 // API functions
 const fetchNodes = async (): Promise<Node[]> => {
   const { data } = await client.get('/nodes', { params: { per_page: 500 } })
@@ -107,6 +129,51 @@ function NodeEditModal({
     address: node.address,
     port: String(node.port),
   })
+  const queryClient = useQueryClient()
+  const [policyForm, setPolicyForm] = useState<NodePolicy>({
+    node_uuid: node.uuid,
+    is_enabled: false,
+    expected_connection_types: [],
+    strict_mode: true,
+    violation_score: 70,
+    reason_template: '',
+  })
+
+  const { data: policyData } = useQuery({
+    queryKey: ['node-policy', node.uuid],
+    queryFn: async () => {
+      try {
+        const { data } = await client.get(`/node-policies/${node.uuid}`)
+        return data as NodePolicy
+      } catch {
+        return null
+      }
+    },
+    enabled: open && !!node.uuid,
+  })
+
+  const savePolicy = useMutation({
+    mutationFn: (payload: NodePolicy) => client.put(`/node-policies/${node.uuid}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['node-policy', node.uuid] })
+      toast.success('Node policy saved')
+    },
+    onError: (err: Error & { response?: { data?: { detail?: string } } }) => {
+      toast.error('Node policy save failed', { description: err.response?.data?.detail || err.message })
+    },
+  })
+
+  const deletePolicy = useMutation({
+    mutationFn: () => client.delete(`/node-policies/${node.uuid}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['node-policy', node.uuid] })
+      setPolicyForm((prev) => ({ ...prev, is_enabled: false, expected_connection_types: [] }))
+      toast.success('Node policy deleted')
+    },
+    onError: (err: Error & { response?: { data?: { detail?: string } } }) => {
+      toast.error('Node policy delete failed', { description: err.response?.data?.detail || err.message })
+    },
+  })
 
   useEffect(() => {
     setForm({
@@ -115,6 +182,24 @@ function NodeEditModal({
       port: String(node.port),
     })
   }, [node])
+
+  useEffect(() => {
+    if (!policyData) {
+      setPolicyForm({
+        node_uuid: node.uuid,
+        is_enabled: false,
+        expected_connection_types: [],
+        strict_mode: true,
+        violation_score: 70,
+        reason_template: '',
+      })
+      return
+    }
+    setPolicyForm({
+      ...policyData,
+      reason_template: policyData.reason_template || '',
+    })
+  }, [policyData, node.uuid])
 
   const handleSubmit = () => {
     const updateData: Record<string, unknown> = {}
@@ -174,6 +259,79 @@ function NodeEditModal({
               onChange={(e) => setForm({ ...form, port: e.target.value })}
               placeholder={t('nodes.editNode.port')}
             />
+          </div>
+          <Separator />
+          <div className="space-y-3">
+            <Label>Node anti-abuse policy</Label>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={policyForm.is_enabled}
+                onCheckedChange={(checked) => setPolicyForm({ ...policyForm, is_enabled: !!checked })}
+              />
+              <span className="text-sm text-dark-100">Enable network policy</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {NODE_POLICY_CONNECTION_TYPES.map((type) => (
+                <label key={type} className="flex items-center gap-2 text-xs text-dark-100">
+                  <Checkbox
+                    checked={policyForm.expected_connection_types.includes(type)}
+                    onCheckedChange={(checked) => {
+                      setPolicyForm((prev) => ({
+                        ...prev,
+                        expected_connection_types: checked
+                          ? [...prev.expected_connection_types, type]
+                          : prev.expected_connection_types.filter((v) => v !== type),
+                      }))
+                    }}
+                  />
+                  <span>{type}</span>
+                </label>
+              ))}
+            </div>
+            <div className="space-y-2">
+              <Label>Violation score</Label>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={policyForm.violation_score}
+                onChange={(e) => setPolicyForm({ ...policyForm, violation_score: Number(e.target.value || 0) })}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={policyForm.strict_mode}
+                onCheckedChange={(checked) => setPolicyForm({ ...policyForm, strict_mode: !!checked })}
+              />
+              <span className="text-sm text-dark-100">Strict mode</span>
+            </div>
+            <div className="space-y-2">
+              <Label>Reason template</Label>
+              <Input
+                type="text"
+                value={policyForm.reason_template || ''}
+                onChange={(e) => setPolicyForm({ ...policyForm, reason_template: e.target.value })}
+                placeholder="Wi-Fi usage is forbidden on LTE node"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => savePolicy.mutate(policyForm)}
+                disabled={savePolicy.isPending}
+              >
+                Save policy
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => deletePolicy.mutate()}
+                disabled={deletePolicy.isPending || !policyData}
+              >
+                Delete policy
+              </Button>
+            </div>
           </div>
         </div>
 

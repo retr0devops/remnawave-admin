@@ -1394,7 +1394,8 @@
       "asn": "ASN (provider type)",
       "profile": "Profile (behavior deviation)",
       "device": "Device (fingerprint)",
-      "hwid": "HWID (cross-account)"
+      "hwid": "HWID (cross-account)",
+      "node_policy": "Node policy (network type mismatch)"
     },
     "exclusions": {
       "mode": "Exclusion mode",

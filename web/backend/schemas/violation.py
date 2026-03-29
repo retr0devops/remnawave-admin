@@ -160,7 +160,7 @@ class IPLookupResponse(BaseModel):
 
 # ── Whitelist ─────────────────────────────────────────────────
 
-VALID_ANALYZERS = {"temporal", "geo", "asn", "profile", "device", "hwid"}
+VALID_ANALYZERS = {"temporal", "geo", "asn", "profile", "device", "hwid", "node_policy"}
 
 
 class WhitelistAddRequest(BaseModel):

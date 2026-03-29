@@ -65,7 +65,7 @@ import type {
   WhitelistItem,
 } from '@/types/violations'
 
-const ANALYZER_KEYS = ['temporal', 'geo', 'asn', 'profile', 'device', 'hwid'] as const
+const ANALYZER_KEYS = ['temporal', 'geo', 'asn', 'profile', 'device', 'hwid', 'node_policy'] as const
 
 // ── API ──────────────────────────────────────────────────────────
 
