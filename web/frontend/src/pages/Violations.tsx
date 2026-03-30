@@ -1521,6 +1521,10 @@ function BanhammerTab() {
   const [blockStagesInput, setBlockStagesInput] = useState(
     DEFAULT_BANHAMMER_SETTINGS.block_stages_minutes.join(', '),
   )
+  const [eventsPage, setEventsPage] = useState(1)
+  const [eventsPerPage, setEventsPerPage] = useState(20)
+  const [statesPage, setStatesPage] = useState(1)
+  const [statesPerPage, setStatesPerPage] = useState(20)
 
   const { data: settings, isLoading: isSettingsLoading } = useQuery({
     queryKey: ['banhammer-settings'],
@@ -1611,14 +1615,20 @@ function BanhammerTab() {
   })
 
   const { data: eventsData, isLoading: isEventsLoading } = useQuery({
-    queryKey: ['banhammer-events'],
-    queryFn: () => listBanhammerEvents({ limit: 100, offset: 0 }),
+    queryKey: ['banhammer-events', eventsPage, eventsPerPage],
+    queryFn: () => listBanhammerEvents({
+      limit: eventsPerPage,
+      offset: (eventsPage - 1) * eventsPerPage,
+    }),
     refetchInterval: 30000,
   })
 
   const { data: statesData, isLoading: isStatesLoading } = useQuery({
-    queryKey: ['banhammer-states'],
-    queryFn: () => listBanhammerStates({ limit: 100, offset: 0 }),
+    queryKey: ['banhammer-states', statesPage, statesPerPage],
+    queryFn: () => listBanhammerStates({
+      limit: statesPerPage,
+      offset: (statesPage - 1) * statesPerPage,
+    }),
     refetchInterval: 30000,
   })
 
@@ -1652,6 +1662,26 @@ function BanhammerTab() {
 
   const events = eventsData?.items || []
   const states = statesData?.items || []
+  const eventsTotal = eventsData?.total || 0
+  const statesTotal = statesData?.total || 0
+  const eventsPages = Math.max(1, Math.ceil(eventsTotal / eventsPerPage))
+  const statesPages = Math.max(1, Math.ceil(statesTotal / statesPerPage))
+  const eventsShownFrom = eventsTotal > 0 ? (eventsPage - 1) * eventsPerPage + 1 : 0
+  const eventsShownTo = eventsTotal > 0 ? Math.min(eventsPage * eventsPerPage, eventsTotal) : 0
+  const statesShownFrom = statesTotal > 0 ? (statesPage - 1) * statesPerPage + 1 : 0
+  const statesShownTo = statesTotal > 0 ? Math.min(statesPage * statesPerPage, statesTotal) : 0
+
+  useEffect(() => {
+    if (eventsPage > eventsPages) {
+      setEventsPage(eventsPages)
+    }
+  }, [eventsPage, eventsPages])
+
+  useEffect(() => {
+    if (statesPage > statesPages) {
+      setStatesPage(statesPages)
+    }
+  }, [statesPage, statesPages])
 
   const policiesEnabledCount = nodePolicies.filter((policy) => policy.is_enabled).length
   const activeBlocksCount = states.filter((state) => {
@@ -2220,6 +2250,46 @@ function BanhammerTab() {
               )}
             </TableBody>
           </Table>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-[var(--glass-border)]/20 pt-3">
+            <p className="text-xs text-dark-300">
+              {t('common.shown')} {eventsShownFrom}–{eventsShownTo} {t('common.of')} {eventsTotal}
+            </p>
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <span className="text-xs text-dark-300">{t('users.perPage')}</span>
+              <select
+                value={eventsPerPage}
+                onChange={(e) => {
+                  setEventsPerPage(Number.parseInt(e.target.value, 10) || 20)
+                  setEventsPage(1)
+                }}
+                className="h-8 rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] px-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-primary-500/50"
+              >
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              <Button
+                variant="secondary"
+                size="icon"
+                onClick={() => setEventsPage((prev) => prev - 1)}
+                disabled={eventsPage <= 1 || isEventsLoading}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <span className="text-xs text-dark-200 min-w-[72px] text-center">
+                {eventsPage} / {eventsPages}
+              </span>
+              <Button
+                variant="secondary"
+                size="icon"
+                onClick={() => setEventsPage((prev) => prev + 1)}
+                disabled={eventsPage >= eventsPages || isEventsLoading}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -2284,6 +2354,46 @@ function BanhammerTab() {
               )}
             </TableBody>
           </Table>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-[var(--glass-border)]/20 pt-3">
+            <p className="text-xs text-dark-300">
+              {t('common.shown')} {statesShownFrom}–{statesShownTo} {t('common.of')} {statesTotal}
+            </p>
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <span className="text-xs text-dark-300">{t('users.perPage')}</span>
+              <select
+                value={statesPerPage}
+                onChange={(e) => {
+                  setStatesPerPage(Number.parseInt(e.target.value, 10) || 20)
+                  setStatesPage(1)
+                }}
+                className="h-8 rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] px-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-primary-500/50"
+              >
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              <Button
+                variant="secondary"
+                size="icon"
+                onClick={() => setStatesPage((prev) => prev - 1)}
+                disabled={statesPage <= 1 || isStatesLoading}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <span className="text-xs text-dark-200 min-w-[72px] text-center">
+                {statesPage} / {statesPages}
+              </span>
+              <Button
+                variant="secondary"
+                size="icon"
+                onClick={() => setStatesPage((prev) => prev + 1)}
+                disabled={statesPage >= statesPages || isStatesLoading}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>

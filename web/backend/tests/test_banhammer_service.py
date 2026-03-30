@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from shared.banhammer import BanhammerService
+from shared.api_client import ValidationError
 from shared.connection_monitor import ActiveConnection
 from shared.geoip import IPMetadata
 
@@ -241,6 +242,32 @@ async def test_expired_block_auto_unblocks():
     db.add_banhammer_event.assert_awaited()
     event_call = db.add_banhammer_event.await_args_list[0]
     assert event_call.kwargs["event_type"] == "unblock"
+
+
+@pytest.mark.asyncio
+async def test_expired_block_auto_unblocks_when_user_already_enabled():
+    current = datetime.now(timezone.utc)
+    db = _db_mock()
+    db.get_banhammer_state.return_value = {
+        "warnings_count": 0,
+        "block_stage": 1,
+        "blocked_until": current - timedelta(minutes=1),
+        "pre_block_status": "active",
+        "last_warning_at": None,
+    }
+    db.get_node_network_policies_by_node_uuids.return_value = {}
+    api_client = MagicMock()
+    api_client.enable_user = AsyncMock(side_effect=ValidationError("User already enabled"))
+    service = BanhammerService(db, api_client_instance=api_client)
+
+    with patch("shared.banhammer.config_service.get", side_effect=_config_side_effect):
+        result = await service.process_user(USER_UUID, [], {})
+
+    assert result.action == "no_mismatch"
+    api_client.enable_user.assert_awaited_once_with(USER_UUID)
+    db.upsert_banhammer_state.assert_awaited()
+    unblock_event = db.add_banhammer_event.await_args_list[0]
+    assert unblock_event.kwargs["event_type"] == "unblock"
 
 
 @pytest.mark.asyncio

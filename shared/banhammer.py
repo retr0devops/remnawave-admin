@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
 from shared.connection_types import normalize_connection_type
+from shared.api_client import ValidationError
 from shared.config_service import config_service
 from shared.database import DatabaseService
 from shared.logger import logger
@@ -420,6 +421,16 @@ class BanhammerService:
             api_client = self._get_api_client()
             await api_client.enable_user(user_uuid)
             return True
+        except ValidationError as e:
+            error_text = (str(e) or "").strip().lower()
+            if "already enabled" in error_text:
+                logger.info(
+                    "Banhammer restore skipped enable for user %s: already enabled",
+                    user_uuid,
+                )
+                return True
+            logger.error("Banhammer failed to enable user %s: %s", user_uuid, e, exc_info=True)
+            return False
         except Exception as e:
             logger.error("Banhammer failed to enable user %s: %s", user_uuid, e, exc_info=True)
             return False
