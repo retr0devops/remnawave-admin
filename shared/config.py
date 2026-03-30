@@ -8,7 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
-from pydantic import AnyHttpUrl, Field
+from pydantic import AliasChoices, AnyHttpUrl, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Load .env from project root
@@ -35,10 +35,14 @@ class SharedSettings(BaseSettings):
     # GeoIP / MaxMind
     maxmind_license_key: str | None = Field(default=None, alias="MAXMIND_LICENSE_KEY")
     maxmind_city_db: str | None = Field(
-        default="/app/geoip/GeoLite2-City.mmdb", alias="MAXMIND_CITY_DB"
+        default="/app/geoip/GeoLite2-City.mmdb",
+        alias="MAXMIND_CITY_DB",
+        validation_alias=AliasChoices("MAXMIND_CITY_DB", "GEOIP_CITY"),
     )
     maxmind_asn_db: str | None = Field(
-        default="/app/geoip/GeoLite2-ASN.mmdb", alias="MAXMIND_ASN_DB"
+        default="/app/geoip/GeoLite2-ASN.mmdb",
+        alias="MAXMIND_ASN_DB",
+        validation_alias=AliasChoices("MAXMIND_ASN_DB", "GEOIP_ASN"),
     )
 
     @property

@@ -232,8 +232,29 @@ def _build_warning_message(result) -> str:
         )
 
     if details:
-        return f"{base_message} ({'; '.join(details)})"
+        base_message = f"{base_message} ({'; '.join(details)})"
+
+    support_contact = config_service.get("banhammer_support_contact", None)
+    if support_contact is None:
+        support_contact = config_service.get("support_contact", None)
+    support_contact_text = str(support_contact).strip() if support_contact is not None else ""
+    if support_contact_text:
+        return f"{base_message}\nSupport: {support_contact_text}"
+
     return base_message
+
+
+def _build_block_message(result) -> Optional[str]:
+    """Build block message text for Bedolaga notification endpoint (optional)."""
+    message = str(getattr(result, "message", "") or "").strip()
+    if not message:
+        return None
+
+    support_contact = config_service.get("banhammer_support_contact", None)
+    support_contact_text = str(support_contact).strip() if support_contact is not None else ""
+    if support_contact_text and support_contact_text not in message:
+        return f"{message}\nSupport: {support_contact_text}"
+    return message
 
 
 async def _send_banhammer_user_notification(user_uuid: str, result) -> None:
@@ -292,6 +313,11 @@ async def _send_banhammer_user_notification(user_uuid: str, result) -> None:
             "username": username,
             "ban_minutes": block_minutes,
         }
+        block_message = _build_block_message(result)
+        if block_message:
+            # Some Bedolaga versions support custom warning_message for block notifications.
+            # If the endpoint has strict schema and rejects this field, we'll retry without it.
+            payload["warning_message"] = block_message
         if network_type_hint:
             payload["network_type"] = network_type_hint
         if node_name:
@@ -306,6 +332,27 @@ async def _send_banhammer_user_notification(user_uuid: str, result) -> None:
             payload.get("notification_type"),
         )
     except Exception as e:
+        if (
+            getattr(result, "action", "") == "block"
+            and isinstance(payload, dict)
+            and "warning_message" in payload
+        ):
+            retry_payload = dict(payload)
+            retry_payload.pop("warning_message", None)
+            try:
+                await bedolaga_client.send_ban_notification(retry_payload)
+                logger.info(
+                    "Banhammer block notification sent via Bedolaga without custom warning_message: user=%s",
+                    user_uuid,
+                )
+                return
+            except Exception as retry_error:
+                logger.warning(
+                    "Bedolaga Banhammer block notification retry failed: user=%s error=%s",
+                    user_uuid,
+                    retry_error,
+                )
+
         logger.warning(
             "Bedolaga Banhammer notification failed: user=%s action=%s error=%s",
             user_uuid,

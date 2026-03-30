@@ -22,6 +22,8 @@ export interface BanhammerSettings {
   warning_limit: number
   warning_cooldown_sec: number
   block_stages_minutes: number[]
+  support_contact: string | null
+  block_message_template: string | null
   warning_template: string | null
 }
 
@@ -68,6 +70,8 @@ const DEFAULT_BANHAMMER_SETTINGS: BanhammerSettings = {
   warning_limit: 3,
   warning_cooldown_sec: 60,
   block_stages_minutes: [15, 60, 360, 720, 1440],
+  support_contact: null,
+  block_message_template: null,
   warning_template: null,
 }
 
@@ -128,6 +132,13 @@ function toNumberArray(value: unknown, fallback: number[]): number[] {
 
 function normalizeBanhammerSettings(payload: unknown): BanhammerSettings {
   const src = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
+  const warningTemplate = toNullableString(src.banhammer_warning_template ?? src.warning_template)
+  const blockMessageTemplate = toNullableString(
+    src.block_message_template
+      ?? src.banhammer_block_message_template
+      ?? src.banhammer_warning_template
+      ?? src.warning_template,
+  )
   return {
     enabled: toBoolean(
       src.banhammer_enabled ?? src.enabled ?? src.is_enabled,
@@ -145,9 +156,9 @@ function normalizeBanhammerSettings(payload: unknown): BanhammerSettings {
       src.banhammer_block_stages_minutes ?? src.block_stages_minutes ?? src.block_stage_minutes,
       DEFAULT_BANHAMMER_SETTINGS.block_stages_minutes,
     ),
-    warning_template: toNullableString(
-      src.banhammer_warning_template ?? src.warning_template,
-    ),
+    support_contact: toNullableString(src.support_contact ?? src.banhammer_support_contact),
+    block_message_template: blockMessageTemplate,
+    warning_template: warningTemplate,
   }
 }
 
@@ -197,12 +208,17 @@ export async function getBanhammerSettings(): Promise<BanhammerSettings> {
 export async function updateBanhammerSettings(
   payload: BanhammerSettingsPayload,
 ): Promise<BanhammerSettings> {
+  const warningTemplate = payload.warning_template ?? ''
+  const blockMessageTemplate = payload.block_message_template ?? ''
+  const supportContact = payload.support_contact ?? ''
   const body = {
     banhammer_enabled: payload.enabled,
     banhammer_warning_limit: payload.warning_limit,
     banhammer_warning_cooldown_seconds: payload.warning_cooldown_sec,
     banhammer_block_stages_minutes: payload.block_stages_minutes,
-    banhammer_warning_template: payload.warning_template ?? '',
+    banhammer_warning_template: warningTemplate,
+    banhammer_block_message_template: blockMessageTemplate,
+    banhammer_support_contact: supportContact,
   }
   const { data } = await client.put('/violations/banhammer/settings', body)
   return normalizeBanhammerSettings(data)

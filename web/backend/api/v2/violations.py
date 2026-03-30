@@ -57,6 +57,9 @@ _BANHAMMER_DEFAULT_TEMPLATE = (
     "Banhammer warning: node network policy mismatch detected. "
     "Reconnect using an allowed network type."
 )
+_BANHAMMER_DEFAULT_BLOCK_MESSAGE_TEMPLATE = (
+    "Access is temporarily restricted for {ban_minutes} minute(s) due to node network policy mismatch."
+)
 
 
 def _parse_hwid_matched(raw) -> list | None:
@@ -138,11 +141,24 @@ def _to_bool_safe(value: Any, default: bool = False) -> bool:
     return default
 
 
+def _to_text_safe(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def _get_banhammer_settings_response() -> BanhammerSettingsResponse:
-    warning_template = config_service.get("banhammer_warning_template", _BANHAMMER_DEFAULT_TEMPLATE)
-    warning_template = str(warning_template).strip() if warning_template is not None else ""
+    warning_template = _to_text_safe(config_service.get("banhammer_warning_template", _BANHAMMER_DEFAULT_TEMPLATE))
     if not warning_template:
         warning_template = _BANHAMMER_DEFAULT_TEMPLATE
+
+    support_contact = _to_text_safe(config_service.get("banhammer_support_contact", None))
+    block_message_template = _to_text_safe(
+        config_service.get("banhammer_block_message_template", _BANHAMMER_DEFAULT_BLOCK_MESSAGE_TEMPLATE)
+    )
+    if not block_message_template:
+        block_message_template = _BANHAMMER_DEFAULT_BLOCK_MESSAGE_TEMPLATE
 
     return BanhammerSettingsResponse(
         banhammer_enabled=_to_bool_safe(config_service.get("banhammer_enabled", False), False),
@@ -155,6 +171,8 @@ def _get_banhammer_settings_response() -> BanhammerSettingsResponse:
         banhammer_block_stages_minutes=_parse_banhammer_stages(
             config_service.get("banhammer_block_stages_minutes", _BANHAMMER_DEFAULT_STAGES)
         ),
+        support_contact=support_contact,
+        block_message_template=block_message_template,
         banhammer_warning_template=warning_template,
     )
 
@@ -999,9 +1017,25 @@ async def update_banhammer_settings(
     admin: AdminUser = Depends(require_permission("violations", "resolve")),
 ):
     """Update Banhammer runtime settings."""
-    warning_template = data.banhammer_warning_template.strip()
-    if not warning_template:
-        warning_template = _BANHAMMER_DEFAULT_TEMPLATE
+    warning_template = _to_text_safe(data.banhammer_warning_template) or _BANHAMMER_DEFAULT_TEMPLATE
+    current_support_contact = _to_text_safe(config_service.get("banhammer_support_contact", None))
+    current_block_message_template = _to_text_safe(
+        config_service.get("banhammer_block_message_template", _BANHAMMER_DEFAULT_BLOCK_MESSAGE_TEMPLATE)
+    )
+    if current_block_message_template is None:
+        current_block_message_template = _BANHAMMER_DEFAULT_BLOCK_MESSAGE_TEMPLATE
+
+    if data.support_contact is None:
+        support_contact = current_support_contact
+    else:
+        support_contact = data.support_contact.strip()
+
+    if data.block_message_template is None:
+        block_message_template = current_block_message_template
+    else:
+        block_message_template = data.block_message_template.strip()
+        if not block_message_template:
+            block_message_template = _BANHAMMER_DEFAULT_BLOCK_MESSAGE_TEMPLATE
 
     updates: list[tuple[str, Any]] = [
         ("banhammer_enabled", data.banhammer_enabled),
@@ -1009,6 +1043,8 @@ async def update_banhammer_settings(
         ("banhammer_warning_cooldown_seconds", data.banhammer_warning_cooldown_seconds),
         ("banhammer_block_stages_minutes", data.banhammer_block_stages_minutes),
         ("banhammer_warning_template", warning_template),
+        ("banhammer_support_contact", support_contact),
+        ("banhammer_block_message_template", block_message_template),
     ]
 
     failed: list[str] = []
@@ -1032,6 +1068,9 @@ async def update_banhammer_settings(
                 "banhammer_warning_limit": data.banhammer_warning_limit,
                 "banhammer_warning_cooldown_seconds": data.banhammer_warning_cooldown_seconds,
                 "banhammer_block_stages_minutes": data.banhammer_block_stages_minutes,
+                "banhammer_warning_template": warning_template,
+                "banhammer_support_contact": support_contact,
+                "banhammer_block_message_template": block_message_template,
             }
         ),
         ip_address=get_client_ip(request),

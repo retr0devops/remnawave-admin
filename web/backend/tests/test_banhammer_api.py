@@ -26,6 +26,17 @@ def _make_db() -> MagicMock:
     return db
 
 
+def _make_effective_value_getter(store: dict):
+    def _get_effective_value(key, default=None):
+        if key == "banhammer_block_message_template":
+            if key in store:
+                return store.get(key), "db"
+            return default, "default"
+        return store.get(key, default), "db" if key in store else "default"
+
+    return _get_effective_value
+
+
 @pytest.mark.asyncio
 async def test_get_banhammer_settings(app, client):
     store = {
@@ -34,9 +45,11 @@ async def test_get_banhammer_settings(app, client):
         "banhammer_warning_cooldown_seconds": 60,
         "banhammer_block_stages_minutes": [15, 60, 360, 720, 1440],
         "banhammer_warning_template": "Banhammer warning template",
+        "banhammer_support_contact": "Telegram @support",
     }
 
-    with patch.object(config_service, "get", side_effect=lambda k, d=None: store.get(k, d)):
+    with patch.object(config_service, "get", side_effect=lambda k, d=None: store.get(k, d)), \
+        patch.object(config_service, "get_effective_value", side_effect=_make_effective_value_getter(store)):
         resp = await client.get("/api/v2/violations/banhammer/settings")
 
     assert resp.status_code == 200
@@ -45,6 +58,11 @@ async def test_get_banhammer_settings(app, client):
     assert data["banhammer_warning_limit"] == 3
     assert data["banhammer_warning_cooldown_seconds"] == 60
     assert data["banhammer_block_stages_minutes"] == [15, 60, 360, 720, 1440]
+    assert data["support_contact"] == "Telegram @support"
+    assert data["block_message_template"] == (
+        "Access is temporarily restricted for {ban_minutes} minute(s) due to node network policy mismatch."
+    )
+    assert data["banhammer_warning_template"] == "Banhammer warning template"
 
 
 @pytest.mark.asyncio
@@ -55,6 +73,8 @@ async def test_put_banhammer_settings(app, client):
         "banhammer_warning_cooldown_seconds": 60,
         "banhammer_block_stages_minutes": [15, 60, 360, 720, 1440],
         "banhammer_warning_template": "Old warning",
+        "banhammer_support_contact": "Old support",
+        "banhammer_block_message_template": "Old block message",
     }
 
     def _get(key, default=None):
@@ -65,6 +85,7 @@ async def test_put_banhammer_settings(app, client):
         return True
 
     with patch.object(config_service, "get", side_effect=_get), \
+        patch.object(config_service, "get_effective_value", side_effect=_make_effective_value_getter(store)), \
         patch.object(config_service, "set", side_effect=_set), \
         patch("web.backend.api.v2.violations.write_audit_log", new_callable=AsyncMock):
         resp = await client.put(
@@ -75,6 +96,8 @@ async def test_put_banhammer_settings(app, client):
                 "banhammer_warning_cooldown_seconds": 120,
                 "banhammer_block_stages_minutes": [5, 30, 120],
                 "banhammer_warning_template": "New warning",
+                "support_contact": "Telegram @new-support",
+                "block_message_template": "New block message",
             },
         )
 
@@ -85,6 +108,57 @@ async def test_put_banhammer_settings(app, client):
     assert data["banhammer_warning_cooldown_seconds"] == 120
     assert data["banhammer_block_stages_minutes"] == [5, 30, 120]
     assert data["banhammer_warning_template"] == "New warning"
+    assert data["support_contact"] == "Telegram @new-support"
+    assert data["block_message_template"] == "New block message"
+    assert store["banhammer_support_contact"] == "Telegram @new-support"
+    assert store["banhammer_block_message_template"] == "New block message"
+
+
+@pytest.mark.asyncio
+async def test_put_banhammer_settings_legacy_payload_preserves_new_fields(app, client):
+    store = {
+        "banhammer_enabled": False,
+        "banhammer_warning_limit": 3,
+        "banhammer_warning_cooldown_seconds": 60,
+        "banhammer_block_stages_minutes": [15, 60, 360, 720, 1440],
+        "banhammer_warning_template": "Old warning",
+        "banhammer_support_contact": "Old support",
+        "banhammer_block_message_template": "Old block message",
+    }
+
+    def _get(key, default=None):
+        return store.get(key, default)
+
+    async def _set(key, value):
+        store[key] = value
+        return True
+
+    with patch.object(config_service, "get", side_effect=_get), \
+        patch.object(config_service, "get_effective_value", side_effect=_make_effective_value_getter(store)), \
+        patch.object(config_service, "set", side_effect=_set), \
+        patch("web.backend.api.v2.violations.write_audit_log", new_callable=AsyncMock):
+        resp = await client.put(
+            "/api/v2/violations/banhammer/settings",
+            json={
+                "banhammer_enabled": True,
+                "banhammer_warning_limit": 5,
+                "banhammer_warning_cooldown_seconds": 90,
+                "banhammer_block_stages_minutes": [10, 20],
+                "banhammer_warning_template": "Legacy warning",
+            },
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["banhammer_enabled"] is True
+    assert data["banhammer_warning_limit"] == 5
+    assert data["banhammer_warning_cooldown_seconds"] == 90
+    assert data["banhammer_block_stages_minutes"] == [10, 20]
+    assert data["banhammer_warning_template"] == "Legacy warning"
+    assert data["support_contact"] == "Old support"
+    assert data["block_message_template"] == "Old block message"
+    assert store["banhammer_support_contact"] == "Old support"
+    assert store["banhammer_block_message_template"] == "Old block message"
 
 
 @pytest.mark.asyncio

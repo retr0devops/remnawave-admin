@@ -44,6 +44,19 @@ class BanhammerSettingsUpdateRequest(BaseModel):
         max_length=4000,
         validation_alias=AliasChoices("banhammer_warning_template", "warning_template"),
     )
+    support_contact: Optional[str] = Field(
+        default=None,
+        max_length=1000,
+        validation_alias=AliasChoices("support_contact", "banhammer_support_contact"),
+    )
+    block_message_template: Optional[str] = Field(
+        default=None,
+        max_length=4000,
+        validation_alias=AliasChoices(
+            "block_message_template",
+            "banhammer_block_message_template",
+        ),
+    )
 
     @field_validator("banhammer_block_stages_minutes")
     @classmethod
@@ -69,6 +82,8 @@ class BanhammerSettingsResponse(BaseModel):
     banhammer_warning_limit: int
     banhammer_warning_cooldown_seconds: int
     banhammer_block_stages_minutes: List[int]
+    support_contact: Optional[str] = None
+    block_message_template: Optional[str] = None
     banhammer_warning_template: str
 
 

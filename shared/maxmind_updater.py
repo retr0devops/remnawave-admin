@@ -1,9 +1,10 @@
 """
 Автоматическое скачивание и обновление баз MaxMind GeoLite2.
 
-Поддерживает два источника:
+Поддерживает источники:
 1. Официальный MaxMind (требуется лицензионный ключ с maxmind.com)
-2. GitHub-зеркало ltsdev/maxmind (без ключа, бесплатно)
+2. GitHub release mojolabs-id/GeoLite2-Database (raw .mmdb)
+3. GitHub-зеркало ltsdev/maxmind (tar.gz)
 
 Базы обновляются каждый вторник, проверка раз в 24 часа.
 """
@@ -23,7 +24,17 @@ from shared.logger import logger
 # Official MaxMind (requires license key)
 MAXMIND_DOWNLOAD_URL = "https://download.maxmind.com/app/geoip_download"
 
-# GitHub mirror — ltsdev/maxmind (no key required)
+# GitHub release — mojolabs-id/GeoLite2-Database (raw .mmdb files)
+GITHUB_RELEASE_URL = os.environ.get(
+    "GITHUB_RELEASE",
+    "https://github.com/mojolabs-id/GeoLite2-Database/releases/latest/download",
+)
+GITHUB_RELEASE_FILES = {
+    "city": "GeoLite2-City.mmdb",
+    "asn": "GeoLite2-ASN.mmdb",
+}
+
+# GitHub mirror — ltsdev/maxmind (tar.gz, no key required)
 GITHUB_BASE_URL = "https://github.com/ltsdev/maxmind/raw/master"
 GITHUB_FILES = {
     "city": "GeoLite2-City.tar.gz",
@@ -84,7 +95,7 @@ async def download_from_github(
     edition_key: str,
     output_path: str,
 ) -> bool:
-    """Скачивает .mmdb базу с GitHub-зеркала ltsdev/maxmind (без ключа)."""
+    """Скачивает .mmdb базу с GitHub-зеркала ltsdev/maxmind (tar.gz, без ключа)."""
     filename = GITHUB_FILES.get(edition_key)
     if not filename:
         logger.error("Unknown edition key for GitHub download: %s", edition_key)
@@ -112,6 +123,38 @@ async def download_from_github(
         return False
 
 
+async def download_from_github_release(
+    edition_key: str,
+    output_path: str,
+) -> bool:
+    """Скачивает .mmdb базу с GitHub release mojolabs-id/GeoLite2-Database."""
+    filename = GITHUB_RELEASE_FILES.get(edition_key)
+    if not filename:
+        logger.error("Unknown edition key for GitHub release download: %s", edition_key)
+        return False
+
+    url = f"{GITHUB_RELEASE_URL}/{filename}"
+
+    try:
+        timeout = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=30.0)
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            logger.info("Downloading %s from GitHub release (mojolabs-id/GeoLite2-Database)...", filename)
+            resp = await client.get(url)
+
+            if resp.status_code != 200:
+                logger.error("GitHub release download failed for %s: HTTP %d", filename, resp.status_code)
+                return False
+
+            return _save_mmdb_bytes(resp.content, EDITIONS[edition_key], output_path)
+
+    except httpx.HTTPError as e:
+        logger.error("HTTP error downloading %s from GitHub release: %s", filename, e)
+        return False
+    except Exception as e:
+        logger.error("Error downloading %s from GitHub release: %s", filename, e, exc_info=True)
+        return False
+
+
 # Legacy alias
 async def download_database(license_key: str, edition_id: str, output_path: str) -> bool:
     """Скачивает .mmdb базу с MaxMind (обратная совместимость)."""
@@ -127,6 +170,11 @@ def _save_mmdb_from_targz(data: bytes, edition_id: str, output_path: str) -> boo
         logger.error("Could not find .mmdb file in %s archive", edition_id)
         return False
 
+    return _save_mmdb_bytes(mmdb_data, edition_id, output_path)
+
+
+def _save_mmdb_bytes(mmdb_data: bytes, edition_id: str, output_path: str) -> bool:
+    """Сохраняет .mmdb байты атомарно."""
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = out.with_suffix(".mmdb.tmp")
@@ -196,26 +244,39 @@ async def ensure_databases(
         city_path: Путь для GeoLite2-City.mmdb
         asn_path: Путь для GeoLite2-ASN.mmdb (опционально)
         force: Принудительно скачать
-        source: Источник: "auto" (GitHub → MaxMind), "github", "maxmind"
+        source: Источник: "auto" (GitHub release → ltsdev mirror → MaxMind),
+            "github" (GitHub release → ltsdev mirror), "maxmind" (official only)
 
     Returns:
         dict с результатами: {"city": True/False, "asn": True/False}
     """
     results = {}
 
+    source_mode = (source or "auto").lower()
+
     async def _download_edition(key: str, path: str) -> bool:
         """Download a single edition using the configured source."""
-        if source == "maxmind" and license_key:
+        if source_mode == "maxmind":
+            if not license_key:
+                logger.warning("MAXMIND_SOURCE=maxmind requires MAXMIND_LICENSE_KEY")
+                return False
             return await download_from_maxmind(license_key, EDITIONS[key], path)
-        elif source == "github":
-            return await download_from_github(key, path)
-        else:
-            # Auto: try GitHub first (no key needed), fall back to MaxMind
-            ok = await download_from_github(key, path)
-            if not ok and license_key:
-                logger.info("GitHub download failed, trying official MaxMind...")
-                ok = await download_from_maxmind(license_key, EDITIONS[key], path)
-            return ok
+        ok = await download_from_github_release(key, path)
+        if ok:
+            return True
+
+        logger.info("GitHub release failed, trying ltsdev mirror...")
+        ok = await download_from_github(key, path)
+        if ok:
+            return True
+
+        if source_mode == "github":
+            return False
+
+        if license_key:
+            logger.info("GitHub sources failed, trying official MaxMind...")
+            return await download_from_maxmind(license_key, EDITIONS[key], path)
+        return False
 
     # City DB
     if force or _db_needs_update(city_path):

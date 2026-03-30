@@ -509,12 +509,20 @@ async def trigger_sync(
 async def get_maxmind_status(
     admin: AdminUser = Depends(require_permission("settings", "view")),
 ):
-    """Get MaxMind GeoIP database status."""
+    """Get MaxMind GeoIP database status for City/ASN local files."""
     try:
         from shared.maxmind_updater import get_db_status
 
-        city_path = os.environ.get("MAXMIND_CITY_DB", "/app/geoip/GeoLite2-City.mmdb")
-        asn_path = os.environ.get("MAXMIND_ASN_DB", "/app/geoip/GeoLite2-ASN.mmdb")
+        city_path = (
+            os.environ.get("MAXMIND_CITY_DB")
+            or os.environ.get("GEOIP_CITY")
+            or "/app/geoip/GeoLite2-City.mmdb"
+        )
+        asn_path = (
+            os.environ.get("MAXMIND_ASN_DB")
+            or os.environ.get("GEOIP_ASN")
+            or "/app/geoip/GeoLite2-ASN.mmdb"
+        )
         source = os.environ.get("MAXMIND_SOURCE", "auto")
         has_key = bool(os.environ.get("MAXMIND_LICENSE_KEY"))
 
@@ -544,14 +552,22 @@ async def trigger_maxmind_update(
     request: Request,
     admin: AdminUser = Depends(require_permission("settings", "edit")),
 ):
-    """Force update MaxMind GeoIP databases."""
+    """Force update MaxMind GeoIP City/ASN databases."""
     try:
         from shared.maxmind_updater import ensure_databases
 
         maxmind_key = os.environ.get("MAXMIND_LICENSE_KEY")
         source = os.environ.get("MAXMIND_SOURCE", "auto")
-        city_path = os.environ.get("MAXMIND_CITY_DB", "/app/geoip/GeoLite2-City.mmdb")
-        asn_path = os.environ.get("MAXMIND_ASN_DB", "/app/geoip/GeoLite2-ASN.mmdb")
+        city_path = (
+            os.environ.get("MAXMIND_CITY_DB")
+            or os.environ.get("GEOIP_CITY")
+            or "/app/geoip/GeoLite2-City.mmdb"
+        )
+        asn_path = (
+            os.environ.get("MAXMIND_ASN_DB")
+            or os.environ.get("GEOIP_ASN")
+            or "/app/geoip/GeoLite2-ASN.mmdb"
+        )
 
         results = await ensure_databases(
             license_key=maxmind_key,

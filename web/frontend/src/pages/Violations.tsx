@@ -114,6 +114,8 @@ const DEFAULT_BANHAMMER_SETTINGS: BanhammerSettings = {
   warning_limit: 3,
   warning_cooldown_sec: 60,
   block_stages_minutes: [15, 60, 360, 720, 1440],
+  support_contact: null,
+  block_message_template: null,
   warning_template: null,
 }
 
@@ -1894,6 +1896,20 @@ function BanhammerTab() {
               </div>
 
               <div>
+                <label className="block text-xs text-dark-200 mb-1">{t('violations.banhammer.settings.supportContact')}</label>
+                <Input
+                  type="text"
+                  value={settingsForm.support_contact || ''}
+                  onChange={(e) => setSettingsForm((prev) => ({
+                    ...prev,
+                    support_contact: e.target.value.trim() ? e.target.value : null,
+                  }))}
+                  disabled={!canEdit || saveSettingsMutation.isPending}
+                  placeholder={t('violations.banhammer.settings.supportContactPlaceholder')}
+                />
+              </div>
+
+              <div>
                 <label className="block text-xs text-dark-200 mb-1">{t('violations.banhammer.settings.warningTemplate')}</label>
                 <Textarea
                   value={settingsForm.warning_template || ''}
@@ -1903,6 +1919,19 @@ function BanhammerTab() {
                   }))}
                   disabled={!canEdit || saveSettingsMutation.isPending}
                   placeholder={t('violations.banhammer.settings.warningTemplatePlaceholder')}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-dark-200 mb-1">{t('violations.banhammer.settings.blockMessageTemplate')}</label>
+                <Textarea
+                  value={settingsForm.block_message_template || ''}
+                  onChange={(e) => setSettingsForm((prev) => ({
+                    ...prev,
+                    block_message_template: e.target.value.trim() ? e.target.value : null,
+                  }))}
+                  disabled={!canEdit || saveSettingsMutation.isPending}
+                  placeholder={t('violations.banhammer.settings.blockMessageTemplatePlaceholder')}
                 />
               </div>
 

@@ -1,8 +1,10 @@
 """Unit tests for Banhammer -> Bedolaga collector notification helpers."""
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from web.backend.api.v2.collector import (
+    _build_block_message,
     _build_warning_message,
     _resolve_network_notification_type,
 )
@@ -56,3 +58,32 @@ def test_build_warning_message_includes_compact_mismatch_details():
     assert "node=11111111" in message
     assert "expected=mobile" in message
     assert "actual=residential" in message
+
+
+def test_build_warning_message_appends_support_contact():
+    result = SimpleNamespace(
+        message="Banhammer warning",
+        mismatches=[],
+    )
+
+    with patch(
+        "web.backend.api.v2.collector.config_service.get",
+        side_effect=lambda key, default=None: {"banhammer_support_contact": "Telegram @support"}.get(key, default),
+    ):
+        message = _build_warning_message(result)
+
+    assert message == "Banhammer warning\nSupport: Telegram @support"
+
+
+def test_build_block_message_uses_result_message_and_support_contact():
+    result = SimpleNamespace(
+        message="Access temporarily blocked for 15 minutes.",
+    )
+
+    with patch(
+        "web.backend.api.v2.collector.config_service.get",
+        side_effect=lambda key, default=None: {"banhammer_support_contact": "@support"}.get(key, default),
+    ):
+        message = _build_block_message(result)
+
+    assert message == "Access temporarily blocked for 15 minutes.\nSupport: @support"

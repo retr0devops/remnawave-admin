@@ -2,13 +2,14 @@
 GeoIP сервис для получения геолокации IP адресов.
 
 Провайдеры (по приоритету):
-1. MaxMind GeoLite2 — локальная .mmdb база (мгновенно, без лимитов).
+1. MaxMind GeoLite2 — локальная .mmdb база City/ASN (мгновенно, без лимитов).
    Настройка: MAXMIND_CITY_DB=/path/to/GeoLite2-City.mmdb
               MAXMIND_ASN_DB=/path/to/GeoLite2-ASN.mmdb  (опционально)
 2. ip-api.com — бесплатный HTTP API (fallback, ~45 req/min).
 3. ipwho.is — бесплатный HTTP API (second fallback, 10k req/month).
 """
 import asyncio
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Set
@@ -126,8 +127,13 @@ class GeoIPService:
             except Exception as e:
                 logger.warning("Failed to open MaxMind ASN DB %s: %s", asn_path, e)
 
-        if self._maxmind_city:
-            logger.info("GeoIP provider: MaxMind GeoLite2 (local, no rate limits)")
+        if self._maxmind_city and self._maxmind_asn:
+            logger.info("GeoIP provider: MaxMind GeoLite2 City+ASN (local, no rate limits)")
+        elif self._maxmind_city:
+            if asn_path:
+                logger.info("GeoIP provider: MaxMind GeoLite2 City only (ASN DB not loaded: %s)", asn_path)
+            else:
+                logger.info("GeoIP provider: MaxMind GeoLite2 City only (ASN disabled)")
         else:
             logger.info("GeoIP provider: ip-api.com (HTTP API, rate-limited) + ipwho.is (fallback)")
 
@@ -141,7 +147,8 @@ class GeoIPService:
             from shared.maxmind_updater import ensure_databases
             city_path = self.settings.maxmind_city_db
             asn_path = self.settings.maxmind_asn_db
-            results = await ensure_databases(license_key, city_path, asn_path)
+            source = os.environ.get("MAXMIND_SOURCE", "auto")
+            results = await ensure_databases(license_key, city_path, asn_path, source=source)
 
             # Переоткрываем readers если базы обновились
             if any(results.values()):
@@ -641,7 +648,9 @@ class GeoIPService:
         # Уровень 3 + 4: MaxMind / ip-api.com
         if ips_to_fetch_api:
             in_memory_hits = len(results) - db_hits
-            provider = "MaxMind" if self.has_maxmind else "ip-api.com/ipwho.is"
+            provider = "MaxMind City+ASN" if self.has_maxmind and self._maxmind_asn else "MaxMind City"
+            if not self.has_maxmind:
+                provider = "ip-api.com/ipwho.is"
             logger.info(
                 "GeoIP batch: %d cached (mem: %d, DB: %d), %d to fetch via %s",
                 len(results), in_memory_hits, db_hits, len(ips_to_fetch_api), provider,

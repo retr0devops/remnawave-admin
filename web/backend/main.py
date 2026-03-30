@@ -541,13 +541,21 @@ async def lifespan(app: FastAPI):
         logger.debug("Rate limiter Redis upgrade skipped: %s", e)
 
     # Ensure MaxMind GeoLite2 databases are downloaded
-    # Supports: license key (official), GitHub mirror (ltsdev/maxmind), or auto
+    # Supports: license key (official), GitHub release + mirror, or auto
     try:
         from shared.maxmind_updater import ensure_databases
         maxmind_key = os.environ.get("MAXMIND_LICENSE_KEY")
         maxmind_source = os.environ.get("MAXMIND_SOURCE", "auto")
-        city_path = os.environ.get("MAXMIND_CITY_DB", "/app/geoip/GeoLite2-City.mmdb")
-        asn_path = os.environ.get("MAXMIND_ASN_DB", "/app/geoip/GeoLite2-ASN.mmdb")
+        city_path = (
+            os.environ.get("MAXMIND_CITY_DB")
+            or os.environ.get("GEOIP_CITY")
+            or "/app/geoip/GeoLite2-City.mmdb"
+        )
+        asn_path = (
+            os.environ.get("MAXMIND_ASN_DB")
+            or os.environ.get("GEOIP_ASN")
+            or "/app/geoip/GeoLite2-ASN.mmdb"
+        )
         await ensure_databases(
             license_key=maxmind_key,
             city_path=city_path,

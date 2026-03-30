@@ -22,6 +22,10 @@ class BanhammerSettings:
         "Banhammer warning: node network policy mismatch detected. "
         "Reconnect using an allowed network type."
     )
+    support_contact: Optional[str] = None
+    block_message_template: str = (
+        "Access is temporarily restricted for {ban_minutes} minute(s) due to node network policy mismatch."
+    )
 
 
 @dataclass
@@ -49,6 +53,9 @@ class BanhammerService:
     DEFAULT_WARNING_TEMPLATE = (
         "Banhammer warning: node network policy mismatch detected. "
         "Reconnect using an allowed network type."
+    )
+    DEFAULT_BLOCK_MESSAGE_TEMPLATE = (
+        "Access is temporarily restricted for {ban_minutes} minute(s) due to node network policy mismatch."
     )
 
     def __init__(self, db_service: DatabaseService, api_client_instance: Any = None):
@@ -211,6 +218,12 @@ class BanhammerService:
         block_minutes = settings.block_stages_minutes[stage_idx]
         next_stage = min(stage_idx + 1, len(settings.block_stages_minutes) - 1)
         blocked_until = now + timedelta(minutes=block_minutes)
+        block_message = self._render_block_message(
+            template=settings.block_message_template,
+            block_minutes=block_minutes,
+            block_stage=stage_idx + 1,
+            support_contact=settings.support_contact,
+        )
 
         user = await self.db.get_user_by_uuid(user_uuid)
         current_status = self._extract_user_status(user)
@@ -248,8 +261,10 @@ class BanhammerService:
             block_stage=stage_idx + 1,
             block_minutes=block_minutes,
             blocked_until=blocked_until,
-            message=f"Banhammer block stage {stage_idx + 1} for {block_minutes} minute(s)",
+            message=block_message,
             details={
+                "block_message_template": settings.block_message_template,
+                "block_message_rendered": block_message,
                 "mismatches": mismatches,
                 "pre_block_status": current_status,
                 "stage_index": stage_idx,
@@ -278,7 +293,7 @@ class BanhammerService:
             block_minutes=block_minutes,
             blocked_until=blocked_until,
             mismatches=mismatches,
-            message=settings.warning_template,
+            message=block_message,
         )
 
     async def reset_user(self, user_uuid: str, reason: str = "manual_reset") -> bool:
@@ -322,12 +337,21 @@ class BanhammerService:
         if not warning_template:
             warning_template = self.DEFAULT_WARNING_TEMPLATE
 
+        support_contact = self._to_text_or_none(config_service.get("banhammer_support_contact", None))
+        block_message_template = self._to_text_or_none(
+            config_service.get("banhammer_block_message_template", self.DEFAULT_BLOCK_MESSAGE_TEMPLATE)
+        )
+        if not block_message_template:
+            block_message_template = self.DEFAULT_BLOCK_MESSAGE_TEMPLATE
+
         return BanhammerSettings(
             enabled=enabled,
             warning_limit=warning_limit,
             warning_cooldown_seconds=warning_cooldown_seconds,
             block_stages_minutes=block_stages_minutes,
             warning_template=warning_template,
+            support_contact=support_contact,
+            block_message_template=block_message_template,
         )
 
     async def _detect_node_policy_mismatches(
@@ -530,3 +554,22 @@ class BanhammerService:
             return None
         text = str(value).strip()
         return text or None
+
+    @staticmethod
+    def _render_block_message(
+        template: str,
+        block_minutes: int,
+        block_stage: int,
+        support_contact: Optional[str] = None,
+    ) -> str:
+        base = (template or "").strip() or BanhammerService.DEFAULT_BLOCK_MESSAGE_TEMPLATE
+        contact = (support_contact or "").strip()
+        replacements = {
+            "{ban_minutes}": str(block_minutes),
+            "{block_stage}": str(block_stage),
+            "{support_contact}": contact,
+        }
+        rendered = base
+        for token, value in replacements.items():
+            rendered = rendered.replace(token, value)
+        return rendered.strip() or BanhammerService.DEFAULT_BLOCK_MESSAGE_TEMPLATE
