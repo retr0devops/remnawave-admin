@@ -46,6 +46,18 @@ export interface BanhammerNodeSummary {
   is_disabled: boolean
 }
 
+export interface BanhammerBedolagaStatus {
+  configured: boolean
+  reachable: boolean
+  health_ok: boolean
+  auth_ok: boolean
+  ban_notifications_endpoint_ok: boolean
+  health_status_code: number | null
+  probe_status_code: number | null
+  detail: string | null
+  checked_at: string | null
+}
+
 interface BanhammerListResult<T> {
   items: T[]
   total: number
@@ -57,6 +69,18 @@ const DEFAULT_BANHAMMER_SETTINGS: BanhammerSettings = {
   warning_cooldown_sec: 60,
   block_stages_minutes: [15, 60, 360, 720, 1440],
   warning_template: null,
+}
+
+const DEFAULT_BANHAMMER_BEDOLAGA_STATUS: BanhammerBedolagaStatus = {
+  configured: false,
+  reachable: false,
+  health_ok: false,
+  auth_ok: false,
+  ban_notifications_endpoint_ok: false,
+  health_status_code: null,
+  probe_status_code: null,
+  detail: null,
+  checked_at: null,
 }
 
 function toNumber(value: unknown, fallback: number): number {
@@ -143,6 +167,28 @@ function normalizeListResult<T extends Record<string, unknown>>(payload: unknown
   return { items: [], total: 0 }
 }
 
+function normalizeBanhammerBedolagaStatus(payload: unknown): BanhammerBedolagaStatus {
+  const src = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
+  return {
+    configured: toBoolean(src.configured, DEFAULT_BANHAMMER_BEDOLAGA_STATUS.configured),
+    reachable: toBoolean(src.reachable, DEFAULT_BANHAMMER_BEDOLAGA_STATUS.reachable),
+    health_ok: toBoolean(src.health_ok, DEFAULT_BANHAMMER_BEDOLAGA_STATUS.health_ok),
+    auth_ok: toBoolean(src.auth_ok, DEFAULT_BANHAMMER_BEDOLAGA_STATUS.auth_ok),
+    ban_notifications_endpoint_ok: toBoolean(
+      src.ban_notifications_endpoint_ok,
+      DEFAULT_BANHAMMER_BEDOLAGA_STATUS.ban_notifications_endpoint_ok,
+    ),
+    health_status_code: Number.isFinite(toNumber(src.health_status_code, Number.NaN))
+      ? toNumber(src.health_status_code, Number.NaN)
+      : null,
+    probe_status_code: Number.isFinite(toNumber(src.probe_status_code, Number.NaN))
+      ? toNumber(src.probe_status_code, Number.NaN)
+      : null,
+    detail: toNullableString(src.detail),
+    checked_at: toNullableString(src.checked_at),
+  }
+}
+
 export async function getBanhammerSettings(): Promise<BanhammerSettings> {
   const { data } = await client.get('/violations/banhammer/settings')
   return normalizeBanhammerSettings(data)
@@ -206,6 +252,11 @@ export async function listBanhammerNodes(): Promise<BanhammerNodeSummary[]> {
   if (Array.isArray(data)) return data as BanhammerNodeSummary[]
   if (Array.isArray(data?.items)) return data.items as BanhammerNodeSummary[]
   return []
+}
+
+export async function getBanhammerBedolagaStatus(): Promise<BanhammerBedolagaStatus> {
+  const { data } = await client.get('/violations/banhammer/bedolaga-status')
+  return normalizeBanhammerBedolagaStatus(data)
 }
 
 export const listBanhammerNodePolicies = listNodePolicies

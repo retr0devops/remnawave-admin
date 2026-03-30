@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import logging
+import httpx
 from fastapi import APIRouter, Depends, Path, Query, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from typing import Any, Optional
@@ -32,6 +33,7 @@ from web.backend.schemas.violation import (
     WhitelistListResponse,
 )
 from web.backend.schemas.banhammer import (
+    BanhammerBedolagaStatusResponse,
     BanhammerEventItem,
     BanhammerEventsResponse,
     BanhammerSettingsResponse,
@@ -39,6 +41,7 @@ from web.backend.schemas.banhammer import (
     BanhammerStateItem,
     BanhammerStatesResponse,
 )
+from web.backend.core.config import get_web_settings
 from shared.config_service import config_service
 from shared.database import DatabaseService
 from shared.geoip import get_geoip_service
@@ -196,6 +199,90 @@ def _row_to_banhammer_state_item(row: dict) -> BanhammerStateItem:
         created_at=row.get("created_at") or datetime.utcnow(),
         updated_at=row.get("updated_at") or datetime.utcnow(),
         is_blocked=bool(row.get("is_blocked", False)),
+    )
+
+
+async def _check_bedolaga_banhammer_api() -> BanhammerBedolagaStatusResponse:
+    settings = get_web_settings()
+    base_url = (settings.bedolaga_api_url or "").strip().rstrip("/")
+    api_token = (settings.bedolaga_api_token or "").strip()
+    checked_at = datetime.utcnow()
+
+    if not base_url or not api_token:
+        return BanhammerBedolagaStatusResponse(
+            configured=False,
+            reachable=False,
+            health_ok=False,
+            auth_ok=False,
+            ban_notifications_endpoint_ok=False,
+            detail="Bedolaga API is not configured. Set BEDOLAGA_API_URL and BEDOLAGA_API_TOKEN.",
+            checked_at=checked_at,
+        )
+
+    headers = {
+        "X-API-Key": api_token,
+        "Authorization": f"Bearer {api_token}",
+    }
+
+    health_status_code: int | None = None
+    probe_status_code: int | None = None
+    reachable = False
+    health_ok = False
+    ban_notifications_endpoint_ok = False
+    detail_parts: list[str] = []
+
+    try:
+        async with httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(8.0)) as client:
+            try:
+                health_response = await client.get("/health", headers=headers)
+                reachable = True
+                health_status_code = health_response.status_code
+                health_ok = 200 <= health_status_code < 300
+                if not health_ok:
+                    detail_parts.append(f"Health endpoint returned HTTP {health_status_code}.")
+            except httpx.RequestError as exc:
+                detail_parts.append(f"Health endpoint request failed: {exc.__class__.__name__}.")
+
+            try:
+                probe_response = await client.post("/ban-notifications/send", headers=headers, json={})
+                reachable = True
+                probe_status_code = probe_response.status_code
+                if probe_status_code in {200, 201, 202, 204, 400, 422}:
+                    ban_notifications_endpoint_ok = True
+                    if probe_status_code in {200, 201, 202, 204}:
+                        detail_parts.append(
+                            "Notification endpoint accepted empty payload; expected validation rejection."
+                        )
+                elif probe_status_code == 404:
+                    detail_parts.append("Notification endpoint /ban-notifications/send not found.")
+                else:
+                    detail_parts.append(f"Notification endpoint returned HTTP {probe_status_code}.")
+            except httpx.RequestError as exc:
+                detail_parts.append(f"Notification endpoint request failed: {exc.__class__.__name__}.")
+    except Exception as exc:
+        logger.warning("Failed to perform Bedolaga Banhammer API check: %s", exc, exc_info=True)
+        detail_parts.append(f"Bedolaga API check failed: {exc.__class__.__name__}.")
+
+    if probe_status_code is not None:
+        auth_ok = probe_status_code not in {401, 403}
+    elif health_status_code is not None:
+        auth_ok = health_status_code not in {401, 403}
+    else:
+        auth_ok = False
+
+    if not detail_parts and reachable and health_ok and auth_ok and ban_notifications_endpoint_ok:
+        detail_parts.append("Bedolaga API check passed.")
+
+    return BanhammerBedolagaStatusResponse(
+        configured=True,
+        reachable=reachable,
+        health_ok=health_ok,
+        auth_ok=auth_ok,
+        ban_notifications_endpoint_ok=ban_notifications_endpoint_ok,
+        health_status_code=health_status_code,
+        probe_status_code=probe_status_code,
+        detail=" ".join(detail_parts) if detail_parts else None,
+        checked_at=checked_at,
     )
 
 
@@ -985,6 +1072,14 @@ async def list_banhammer_states(
     items = [_row_to_banhammer_state_item(row) for row in rows]
     pages = (total + per_page - 1) // per_page if total > 0 else 1
     return BanhammerStatesResponse(items=items, total=total, page=page, per_page=per_page, pages=pages)
+
+
+@router.get("/banhammer/bedolaga-status", response_model=BanhammerBedolagaStatusResponse)
+async def get_banhammer_bedolaga_status(
+    admin: AdminUser = Depends(require_permission("violations", "view")),
+):
+    """Check Bedolaga Web API health/auth and ban-notifications endpoint contract."""
+    return await _check_bedolaga_banhammer_api()
 
 
 @router.get("/{violation_id}", response_model=ViolationDetail)

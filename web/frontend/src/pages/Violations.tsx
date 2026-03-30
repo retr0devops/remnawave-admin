@@ -44,6 +44,7 @@ import client from '../api/client'
 import {
   NODE_NETWORK_POLICY_CONNECTION_TYPES,
   deleteBanhammerNodePolicy,
+  getBanhammerBedolagaStatus,
   getBanhammerSettings,
   listBanhammerEvents,
   listBanhammerNodePolicies,
@@ -61,11 +62,15 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { QueryError } from '@/components/QueryError'
 import { InfoTooltip } from '@/components/InfoTooltip'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 import { ExportDropdown } from '@/components/ExportDropdown'
 import { SavedFiltersDropdown } from '@/components/SavedFiltersDropdown'
@@ -1615,6 +1620,20 @@ function BanhammerTab() {
     refetchInterval: 30000,
   })
 
+  const {
+    data: bedolagaStatus,
+    isLoading: isBedolagaStatusLoading,
+    isFetching: isBedolagaStatusFetching,
+    isError: isBedolagaStatusError,
+    error: bedolagaStatusError,
+    refetch: refetchBedolagaStatus,
+  } = useQuery({
+    queryKey: ['banhammer-bedolaga-status'],
+    queryFn: getBanhammerBedolagaStatus,
+    refetchInterval: 120000,
+    retry: 1,
+  })
+
   const toggleConnectionType = (type: NodeNetworkPolicyConnectionType) => {
     setPolicyForm((prev) => {
       const expectedConnectionTypes = prev.expected_connection_types.includes(type)
@@ -1632,17 +1651,86 @@ function BanhammerTab() {
   const events = eventsData?.items || []
   const states = statesData?.items || []
 
+  const policiesEnabledCount = nodePolicies.filter((policy) => policy.is_enabled).length
+  const activeBlocksCount = states.filter((state) => {
+    const row = state as Record<string, unknown>
+    const direct = row.is_blocked
+    if (typeof direct === 'boolean') return direct
+    return Boolean(getRecordValue(row, ['is_blocked', 'blocked_until', 'blocked_till']))
+  }).length
+
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ['banhammer-settings'] })
     queryClient.invalidateQueries({ queryKey: ['banhammer-events'] })
     queryClient.invalidateQueries({ queryKey: ['banhammer-states'] })
     queryClient.invalidateQueries({ queryKey: ['banhammer-node-policies'] })
     queryClient.invalidateQueries({ queryKey: ['banhammer-nodes'] })
+    queryClient.invalidateQueries({ queryKey: ['banhammer-bedolaga-status'] })
+  }
+
+  const parseErrorMessage = (error: unknown): string => {
+    const withResponse = error as { response?: { data?: { detail?: string } }; message?: string }
+    return withResponse?.response?.data?.detail || withResponse?.message || t('common.loadError')
+  }
+
+  const statusBadge = (ok: boolean, failLabel: string, successLabel: string) => (
+    <Badge variant={ok ? 'success' : 'destructive'}>
+      {ok ? successLabel : failLabel}
+    </Badge>
+  )
+
+  const integrationStatus = (() => {
+    if (!bedolagaStatus) return 'unknown'
+    if (!bedolagaStatus.configured) return 'not_configured'
+    if (bedolagaStatus.reachable && bedolagaStatus.health_ok && bedolagaStatus.auth_ok && bedolagaStatus.ban_notifications_endpoint_ok) {
+      return 'ok'
+    }
+    return 'degraded'
+  })()
+
+  const integrationBadgeVariant: 'success' | 'warning' | 'secondary' = integrationStatus === 'ok'
+    ? 'success'
+    : integrationStatus === 'degraded'
+      ? 'warning'
+      : 'secondary'
+  const integrationBadgeLabel = integrationStatus === 'ok'
+    ? t('violations.banhammer.bedolaga.overall.ok')
+    : integrationStatus === 'degraded'
+      ? t('violations.banhammer.bedolaga.overall.degraded')
+      : t('violations.banhammer.bedolaga.overall.notConfigured')
+
+  const renderActionBadge = (actionRaw: unknown) => {
+    const action = String(actionRaw || '').toLowerCase()
+    if (action.includes('warn')) return <Badge variant="warning">{toDisplayText(actionRaw)}</Badge>
+    if (action.includes('hard_block') || action.includes('temp_block') || action.includes('soft_block') || action.includes('block')) {
+      return <Badge variant="destructive">{toDisplayText(actionRaw)}</Badge>
+    }
+    if (action.includes('unblock')) return <Badge variant="success">{toDisplayText(actionRaw)}</Badge>
+    return <Badge variant="secondary">{toDisplayText(actionRaw)}</Badge>
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-end">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <div className="rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/50 px-3 py-2.5">
+          <p className="text-[11px] uppercase tracking-wide text-dark-300">{t('violations.banhammer.summary.enabled')}</p>
+          <div className="mt-1">{statusBadge(settingsForm.enabled, t('common.disabled'), t('common.enabled'))}</div>
+        </div>
+        <div className="rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/50 px-3 py-2.5">
+          <p className="text-[11px] uppercase tracking-wide text-dark-300">{t('violations.banhammer.summary.nodesWithPolicy')}</p>
+          <p className="mt-1 text-xl font-semibold text-white">{policiesEnabledCount}/{nodePolicies.length}</p>
+        </div>
+        <div className="rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/50 px-3 py-2.5">
+          <p className="text-[11px] uppercase tracking-wide text-dark-300">{t('violations.banhammer.summary.activeBlocks')}</p>
+          <p className="mt-1 text-xl font-semibold text-white">{activeBlocksCount}</p>
+        </div>
+        <div className="rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/50 px-3 py-2.5">
+          <p className="text-[11px] uppercase tracking-wide text-dark-300">{t('violations.banhammer.summary.recentEvents')}</p>
+          <p className="mt-1 text-xl font-semibold text-white">{events.length}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-end gap-2">
         <Button
           variant="secondary"
           size="sm"
@@ -1653,6 +1741,84 @@ function BanhammerTab() {
           {t('violations.banhammer.refresh')}
         </Button>
       </div>
+
+      <Card>
+        <CardContent className="p-4 space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-medium text-white">{t('violations.banhammer.bedolaga.title')}</h3>
+              <p className="text-xs text-dark-300 mt-0.5">{t('violations.banhammer.bedolaga.description')}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant={integrationBadgeVariant}>{integrationBadgeLabel}</Badge>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => refetchBedolagaStatus()}
+                disabled={isBedolagaStatusFetching}
+                className="gap-2"
+              >
+                <RefreshCw className={cn('w-4 h-4', isBedolagaStatusFetching && 'animate-spin')} />
+                {t('violations.banhammer.bedolaga.checkNow')}
+              </Button>
+            </div>
+          </div>
+
+          {isBedolagaStatusLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <Skeleton key={index} className="h-14 w-full" />
+              ))}
+            </div>
+          ) : isBedolagaStatusError ? (
+            <QueryError onRetry={() => refetchBedolagaStatus()} message={parseErrorMessage(bedolagaStatusError)} />
+          ) : bedolagaStatus ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                <div className="rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/40 px-3 py-2">
+                  <p className="text-[11px] text-dark-300 uppercase tracking-wide">{t('violations.banhammer.bedolaga.configured')}</p>
+                  <div className="mt-1">
+                    {statusBadge(bedolagaStatus.configured, t('common.no'), t('common.yes'))}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/40 px-3 py-2">
+                  <p className="text-[11px] text-dark-300 uppercase tracking-wide">{t('violations.banhammer.bedolaga.reachable')}</p>
+                  <div className="mt-1">
+                    {statusBadge(bedolagaStatus.reachable, t('common.no'), t('common.yes'))}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/40 px-3 py-2">
+                  <p className="text-[11px] text-dark-300 uppercase tracking-wide">{t('violations.banhammer.bedolaga.auth')}</p>
+                  <div className="mt-1">
+                    {statusBadge(bedolagaStatus.auth_ok, t('common.no'), t('common.yes'))}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/40 px-3 py-2">
+                  <p className="text-[11px] text-dark-300 uppercase tracking-wide">{t('violations.banhammer.bedolaga.endpoint')}</p>
+                  <div className="mt-1">
+                    {statusBadge(
+                      bedolagaStatus.ban_notifications_endpoint_ok,
+                      t('violations.banhammer.bedolaga.endpointBroken'),
+                      t('violations.banhammer.bedolaga.endpointOk'),
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/30 px-3 py-2 text-xs text-dark-200">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <span>{t('violations.banhammer.bedolaga.healthCode')}: {toDisplayText(bedolagaStatus.health_status_code)}</span>
+                  <span>{t('violations.banhammer.bedolaga.probeCode')}: {toDisplayText(bedolagaStatus.probe_status_code)}</span>
+                  <span>{t('violations.banhammer.bedolaga.checkedAt')}: {bedolagaStatus.checked_at ? formatDate(bedolagaStatus.checked_at) : '—'}</span>
+                </div>
+                {bedolagaStatus.detail && (
+                  <p className="mt-2 text-[11px] text-dark-300">{bedolagaStatus.detail}</p>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="p-4 space-y-4">
@@ -1671,49 +1837,45 @@ function BanhammerTab() {
             <div className="space-y-3">
               <label className="flex items-center justify-between gap-3 rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/40 px-3 py-2.5">
                 <span className="text-sm text-dark-100">{t('violations.banhammer.settings.enabled')}</span>
-                <input
-                  type="checkbox"
+                <Switch
                   checked={settingsForm.enabled}
-                  onChange={(e) => setSettingsForm((prev) => ({ ...prev, enabled: e.target.checked }))}
+                  onCheckedChange={(checked) => setSettingsForm((prev) => ({ ...prev, enabled: checked }))}
                   disabled={!canEdit || saveSettingsMutation.isPending}
-                  className="h-4 w-4 rounded border-[var(--glass-border)] bg-[var(--glass-bg)] text-primary-500 focus:ring-primary-500/40"
                 />
               </label>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-dark-200 mb-1">{t('violations.banhammer.settings.warningLimit')}</label>
-                  <input
+                  <Input
                     type="number"
-                    min={0}
+                    min={1}
                     value={settingsForm.warning_limit}
                     onChange={(e) => setSettingsForm((prev) => ({
                       ...prev,
-                      warning_limit: Number.parseInt(e.target.value, 10) || 0,
+                      warning_limit: Number.parseInt(e.target.value, 10) || 1,
                     }))}
                     disabled={!canEdit || saveSettingsMutation.isPending}
-                    className="flex h-10 w-full rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50"
                   />
                 </div>
                 <div>
                   <label className="block text-xs text-dark-200 mb-1">{t('violations.banhammer.settings.warningCooldownSec')}</label>
-                  <input
+                  <Input
                     type="number"
-                    min={0}
+                    min={1}
                     value={settingsForm.warning_cooldown_sec}
                     onChange={(e) => setSettingsForm((prev) => ({
                       ...prev,
-                      warning_cooldown_sec: Number.parseInt(e.target.value, 10) || 0,
+                      warning_cooldown_sec: Number.parseInt(e.target.value, 10) || 1,
                     }))}
                     disabled={!canEdit || saveSettingsMutation.isPending}
-                    className="flex h-10 w-full rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50"
                   />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs text-dark-200 mb-1">{t('violations.banhammer.settings.blockStagesMinutes')}</label>
-                <input
+                <Input
                   type="text"
                   value={blockStagesInput}
                   onChange={(e) => {
@@ -1727,7 +1889,6 @@ function BanhammerTab() {
                   }}
                   disabled={!canEdit || saveSettingsMutation.isPending}
                   placeholder="30, 240, 1440"
-                  className="flex h-10 w-full rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2 text-sm text-white placeholder:text-dark-300 focus:outline-none focus:ring-2 focus:ring-primary-500/50"
                 />
                 <p className="text-[11px] text-dark-400 mt-1">{t('violations.banhammer.settings.blockStagesHint')}</p>
               </div>
@@ -1824,12 +1985,10 @@ function BanhammerTab() {
 
                   <label className="flex items-center justify-between gap-3 rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/40 px-3 py-2.5">
                     <span className="text-sm text-dark-100">{t('violations.banhammer.nodePolicies.enable')}</span>
-                    <input
-                      type="checkbox"
+                    <Switch
                       checked={policyForm.is_enabled}
-                      onChange={(e) => setPolicyForm((prev) => ({ ...prev, is_enabled: e.target.checked }))}
+                      onCheckedChange={(checked) => setPolicyForm((prev) => ({ ...prev, is_enabled: checked }))}
                       disabled={!canEdit || savePolicyMutation.isPending}
-                      className="h-4 w-4 rounded border-[var(--glass-border)] bg-[var(--glass-bg)] text-primary-500 focus:ring-primary-500/40"
                     />
                   </label>
 
@@ -1894,24 +2053,21 @@ function BanhammerTab() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-dark-200 mb-1">{t('violations.banhammer.nodePolicies.violationScore')}</label>
-                      <input
+                      <Input
                         type="number"
                         min={0}
                         max={100}
                         value={policyForm.violation_score}
                         onChange={(e) => setPolicyForm((prev) => ({ ...prev, violation_score: e.target.value }))}
                         disabled={!canEdit || savePolicyMutation.isPending}
-                        className="flex h-10 w-full rounded-md border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50"
                       />
                     </div>
                     <label className="flex items-center justify-between gap-3 rounded-lg border border-[var(--glass-border)]/20 bg-[var(--glass-bg)]/40 px-3 py-2.5 self-end">
                       <span className="text-sm text-dark-100">{t('violations.banhammer.nodePolicies.strictMode')}</span>
-                      <input
-                        type="checkbox"
+                      <Switch
                         checked={policyForm.strict_mode}
-                        onChange={(e) => setPolicyForm((prev) => ({ ...prev, strict_mode: e.target.checked }))}
+                        onCheckedChange={(checked) => setPolicyForm((prev) => ({ ...prev, strict_mode: checked }))}
                         disabled={!canEdit || savePolicyMutation.isPending}
-                        className="h-4 w-4 rounded border-[var(--glass-border)] bg-[var(--glass-bg)] text-primary-500 focus:ring-primary-500/40"
                       />
                     </label>
                   </div>
@@ -1964,69 +2120,77 @@ function BanhammerTab() {
             <p className="text-xs text-dark-300 mt-0.5">{t('violations.banhammer.events.description')}</p>
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-[var(--glass-border)]/20">
-            <table className="w-full text-sm">
-              <thead className="bg-[var(--glass-bg)]/70">
-                <tr className="text-left text-xs text-dark-300">
-                  <th className="px-3 py-2">{t('violations.banhammer.events.columns.time')}</th>
-                  <th className="px-3 py-2">{t('violations.banhammer.events.columns.action')}</th>
-                  <th className="px-3 py-2">{t('violations.banhammer.events.columns.user')}</th>
-                  <th className="px-3 py-2">{t('violations.banhammer.events.columns.node')}</th>
-                  <th className="px-3 py-2">{t('violations.banhammer.events.columns.reason')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {isEventsLoading ? (
-                  Array.from({ length: 4 }).map((_, index) => (
-                    <tr key={index} className="border-t border-[var(--glass-border)]/20">
-                      <td className="px-3 py-2" colSpan={5}>
-                        <Skeleton className="h-5 w-full" />
-                      </td>
-                    </tr>
-                  ))
-                ) : events.length === 0 ? (
-                  <tr className="border-t border-[var(--glass-border)]/20">
-                    <td className="px-3 py-5 text-center text-dark-300" colSpan={5}>
-                      {t('violations.banhammer.events.empty')}
-                    </td>
-                  </tr>
-                ) : (
-                  events.map((event: BanhammerEventRecord, index) => {
-                    const row = event as Record<string, unknown>
-                    const rowKey = `${toDisplayText(getRecordValue(row, ['id', 'event_id']))}-${index}`
-                    const rawTime = getRecordValue(row, ['created_at', 'detected_at', 'event_at', 'timestamp'])
-                    const time = typeof rawTime === 'string' ? formatDate(rawTime) : toDisplayText(rawTime)
-                    const action = toDisplayText(getRecordValue(row, ['action', 'event_type', 'type', 'stage']))
-                    const user = toDisplayText(getRecordValue(row, ['username', 'email', 'user_uuid', 'user_id']))
-                    const details = row.details as Record<string, unknown> | undefined
-                    const mismatchNode = (() => {
-                      const rawMismatches = details?.mismatches
-                      if (!Array.isArray(rawMismatches) || rawMismatches.length === 0) return null
-                      const first = rawMismatches[0]
-                      if (!first || typeof first !== 'object') return null
-                      return (first as Record<string, unknown>).node_uuid ?? null
-                    })()
-                    const node = toDisplayText(
-                      getRecordValue(
-                        row,
-                        ['node_name', 'node_uuid'],
-                      ) ?? mismatchNode,
-                    )
-                    const reason = toDisplayText(getRecordValue(row, ['reason', 'message', 'description']))
-                    return (
-                      <tr key={rowKey} className="border-t border-[var(--glass-border)]/20">
-                        <td className="px-3 py-2 text-dark-200 whitespace-nowrap">{time}</td>
-                        <td className="px-3 py-2 text-white">{action}</td>
-                        <td className="px-3 py-2 text-dark-100">{user}</td>
-                        <td className="px-3 py-2 text-dark-100">{node}</td>
-                        <td className="px-3 py-2 text-dark-200 max-w-[320px] truncate">{reason}</td>
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('violations.banhammer.events.columns.time')}</TableHead>
+                <TableHead>{t('violations.banhammer.events.columns.action')}</TableHead>
+                <TableHead>{t('violations.banhammer.events.columns.user')}</TableHead>
+                <TableHead>{t('violations.banhammer.events.columns.node')}</TableHead>
+                <TableHead>{t('violations.banhammer.events.columns.reason')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isEventsLoading ? (
+                Array.from({ length: 4 }).map((_, index) => (
+                  <TableRow key={index}>
+                    <TableCell colSpan={5}>
+                      <Skeleton className="h-5 w-full" />
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : events.length === 0 ? (
+                <TableRow>
+                  <TableCell className="text-center text-dark-300 py-6" colSpan={5}>
+                    {t('violations.banhammer.events.empty')}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                events.map((event: BanhammerEventRecord, index) => {
+                  const row = event as Record<string, unknown>
+                  const rowKey = `${toDisplayText(getRecordValue(row, ['id', 'event_id']))}-${index}`
+                  const rawTime = getRecordValue(row, ['created_at', 'detected_at', 'event_at', 'timestamp'])
+                  const time = typeof rawTime === 'string' ? formatDate(rawTime) : toDisplayText(rawTime)
+                  const action = getRecordValue(row, ['action', 'event_type', 'type', 'stage'])
+                  const user = toDisplayText(getRecordValue(row, ['username', 'email', 'user_uuid', 'user_id']))
+                  const details = row.details as Record<string, unknown> | undefined
+                  const mismatchNode = (() => {
+                    const rawMismatches = details?.mismatches
+                    if (!Array.isArray(rawMismatches) || rawMismatches.length === 0) return null
+                    const first = rawMismatches[0]
+                    if (!first || typeof first !== 'object') return null
+                    return (first as Record<string, unknown>).node_uuid ?? null
+                  })()
+                  const node = toDisplayText(
+                    getRecordValue(
+                      row,
+                      ['node_name', 'node_uuid'],
+                    ) ?? mismatchNode,
+                  )
+                  const reason = toDisplayText(getRecordValue(row, ['reason', 'message', 'description']))
+                  const reasonLower = reason.toLowerCase()
+                  const isNodePolicyMismatch = reasonLower.includes('node policy mismatch')
+
+                  return (
+                    <TableRow key={rowKey}>
+                      <TableCell className="text-dark-200 whitespace-nowrap">{time}</TableCell>
+                      <TableCell>{renderActionBadge(action)}</TableCell>
+                      <TableCell className="text-dark-100">{user}</TableCell>
+                      <TableCell className="text-dark-100">{node}</TableCell>
+                      <TableCell className="max-w-[360px]">
+                        <div className="flex items-center gap-2">
+                          {isNodePolicyMismatch && (
+                            <Badge variant="warning">{t('violations.banhammer.events.nodePolicyMismatch')}</Badge>
+                          )}
+                          <span className="text-dark-200 truncate">{reason}</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
 
@@ -2037,61 +2201,60 @@ function BanhammerTab() {
             <p className="text-xs text-dark-300 mt-0.5">{t('violations.banhammer.states.description')}</p>
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-[var(--glass-border)]/20">
-            <table className="w-full text-sm">
-              <thead className="bg-[var(--glass-bg)]/70">
-                <tr className="text-left text-xs text-dark-300">
-                  <th className="px-3 py-2">{t('violations.banhammer.states.columns.user')}</th>
-                  <th className="px-3 py-2">{t('violations.banhammer.states.columns.stage')}</th>
-                  <th className="px-3 py-2">{t('violations.banhammer.states.columns.warnings')}</th>
-                  <th className="px-3 py-2">{t('violations.banhammer.states.columns.blockedUntil')}</th>
-                  <th className="px-3 py-2">{t('violations.banhammer.states.columns.updatedAt')}</th>
-                  <th className="px-3 py-2">{t('violations.banhammer.states.columns.node')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {isStatesLoading ? (
-                  Array.from({ length: 4 }).map((_, index) => (
-                    <tr key={index} className="border-t border-[var(--glass-border)]/20">
-                      <td className="px-3 py-2" colSpan={6}>
-                        <Skeleton className="h-5 w-full" />
-                      </td>
-                    </tr>
-                  ))
-                ) : states.length === 0 ? (
-                  <tr className="border-t border-[var(--glass-border)]/20">
-                    <td className="px-3 py-5 text-center text-dark-300" colSpan={6}>
-                      {t('violations.banhammer.states.empty')}
-                    </td>
-                  </tr>
-                ) : (
-                  states.map((state: BanhammerStateRecord, index) => {
-                    const row = state as Record<string, unknown>
-                    const rowKey = `${toDisplayText(getRecordValue(row, ['id', 'user_uuid', 'user_id']))}-${index}`
-                    const user = toDisplayText(getRecordValue(row, ['username', 'email', 'user_uuid', 'user_id']))
-                    const stage = toDisplayText(getRecordValue(row, ['block_stage', 'stage', 'current_stage', 'status', 'action']))
-                    const warnings = toDisplayText(getRecordValue(row, ['warning_count', 'warnings', 'warnings_count']))
-                    const rawBlockedUntil = getRecordValue(row, ['blocked_until', 'blocked_till', 'blocked_until_at', 'expires_at'])
-                    const blockedUntil = typeof rawBlockedUntil === 'string' ? formatDate(rawBlockedUntil) : toDisplayText(rawBlockedUntil)
-                    const rawUpdatedAt = getRecordValue(row, ['updated_at', 'created_at', 'changed_at'])
-                    const updatedAt = typeof rawUpdatedAt === 'string' ? formatDate(rawUpdatedAt) : toDisplayText(rawUpdatedAt)
-                    const node = toDisplayText(getRecordValue(row, ['last_node_uuid', 'node_name', 'node_uuid']))
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('violations.banhammer.states.columns.user')}</TableHead>
+                <TableHead>{t('violations.banhammer.states.columns.stage')}</TableHead>
+                <TableHead>{t('violations.banhammer.states.columns.warnings')}</TableHead>
+                <TableHead>{t('violations.banhammer.states.columns.blockedUntil')}</TableHead>
+                <TableHead>{t('violations.banhammer.states.columns.updatedAt')}</TableHead>
+                <TableHead>{t('violations.banhammer.states.columns.node')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isStatesLoading ? (
+                Array.from({ length: 4 }).map((_, index) => (
+                  <TableRow key={index}>
+                    <TableCell colSpan={6}>
+                      <Skeleton className="h-5 w-full" />
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : states.length === 0 ? (
+                <TableRow>
+                  <TableCell className="text-center text-dark-300 py-6" colSpan={6}>
+                    {t('violations.banhammer.states.empty')}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                states.map((state: BanhammerStateRecord, index) => {
+                  const row = state as Record<string, unknown>
+                  const rowKey = `${toDisplayText(getRecordValue(row, ['id', 'user_uuid', 'user_id']))}-${index}`
+                  const user = toDisplayText(getRecordValue(row, ['username', 'email', 'user_uuid', 'user_id']))
+                  const stage = toDisplayText(getRecordValue(row, ['block_stage', 'stage', 'current_stage', 'status', 'action']))
+                  const warnings = toDisplayText(getRecordValue(row, ['warning_count', 'warnings', 'warnings_count']))
+                  const rawBlockedUntil = getRecordValue(row, ['blocked_until', 'blocked_till', 'blocked_until_at', 'expires_at'])
+                  const blockedUntil = typeof rawBlockedUntil === 'string' ? formatDate(rawBlockedUntil) : toDisplayText(rawBlockedUntil)
+                  const rawUpdatedAt = getRecordValue(row, ['updated_at', 'created_at', 'changed_at'])
+                  const updatedAt = typeof rawUpdatedAt === 'string' ? formatDate(rawUpdatedAt) : toDisplayText(rawUpdatedAt)
+                  const node = toDisplayText(getRecordValue(row, ['last_node_uuid', 'node_name', 'node_uuid']))
+                  const isBlocked = Boolean(getRecordValue(row, ['is_blocked', 'blocked_until', 'blocked_till']))
 
-                    return (
-                      <tr key={rowKey} className="border-t border-[var(--glass-border)]/20">
-                        <td className="px-3 py-2 text-dark-100">{user}</td>
-                        <td className="px-3 py-2 text-white">{stage}</td>
-                        <td className="px-3 py-2 text-dark-100">{warnings}</td>
-                        <td className="px-3 py-2 text-dark-200 whitespace-nowrap">{blockedUntil}</td>
-                        <td className="px-3 py-2 text-dark-200 whitespace-nowrap">{updatedAt}</td>
-                        <td className="px-3 py-2 text-dark-100">{node}</td>
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                  return (
+                    <TableRow key={rowKey}>
+                      <TableCell className="text-dark-100">{user}</TableCell>
+                      <TableCell>{isBlocked ? <Badge variant="destructive">{stage}</Badge> : <Badge variant="secondary">{stage}</Badge>}</TableCell>
+                      <TableCell className="text-dark-100">{warnings}</TableCell>
+                      <TableCell className="text-dark-200 whitespace-nowrap">{blockedUntil}</TableCell>
+                      <TableCell className="text-dark-200 whitespace-nowrap">{updatedAt}</TableCell>
+                      <TableCell className="text-dark-100">{node}</TableCell>
+                    </TableRow>
+                  )
+                })
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </div>

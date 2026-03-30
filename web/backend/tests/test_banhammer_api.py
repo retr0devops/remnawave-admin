@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from web.backend.api.deps import get_db
@@ -158,3 +160,137 @@ async def test_list_banhammer_states_only_blocked(app, client):
     assert data["total"] == 1
     assert data["items"][0]["is_blocked"] is True
     assert data["items"][0]["block_stage"] == 2
+
+
+@pytest.mark.asyncio
+async def test_get_banhammer_bedolaga_status_not_configured(app, client):
+    with patch(
+        "web.backend.api.v2.violations.get_web_settings",
+        return_value=SimpleNamespace(bedolaga_api_url=None, bedolaga_api_token=None),
+    ):
+        resp = await client.get("/api/v2/violations/banhammer/bedolaga-status")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["configured"] is False
+    assert data["reachable"] is False
+    assert data["auth_ok"] is False
+    assert data["ban_notifications_endpoint_ok"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_banhammer_bedolaga_status_ok(app, client):
+    class _ClientOk:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, path, headers=None):
+            request = httpx.Request("GET", "https://bedolaga.local/health")
+            return httpx.Response(200, request=request, json={"status": "ok"})
+
+        async def post(self, path, headers=None, json=None):
+            request = httpx.Request("POST", "https://bedolaga.local/ban-notifications/send")
+            return httpx.Response(422, request=request, json={"detail": "validation error"})
+
+    with patch(
+        "web.backend.api.v2.violations.get_web_settings",
+        return_value=SimpleNamespace(
+            bedolaga_api_url="https://bedolaga.local",
+            bedolaga_api_token="token",
+        ),
+    ), patch("web.backend.api.v2.violations.httpx.AsyncClient", _ClientOk):
+        resp = await client.get("/api/v2/violations/banhammer/bedolaga-status")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["configured"] is True
+    assert data["reachable"] is True
+    assert data["health_ok"] is True
+    assert data["auth_ok"] is True
+    assert data["ban_notifications_endpoint_ok"] is True
+    assert data["health_status_code"] == 200
+    assert data["probe_status_code"] == 422
+
+
+@pytest.mark.asyncio
+async def test_get_banhammer_bedolaga_status_auth_failed(app, client):
+    class _ClientAuthFailed:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, path, headers=None):
+            request = httpx.Request("GET", "https://bedolaga.local/health")
+            return httpx.Response(200, request=request, json={"status": "ok"})
+
+        async def post(self, path, headers=None, json=None):
+            request = httpx.Request("POST", "https://bedolaga.local/ban-notifications/send")
+            return httpx.Response(401, request=request, json={"detail": "unauthorized"})
+
+    with patch(
+        "web.backend.api.v2.violations.get_web_settings",
+        return_value=SimpleNamespace(
+            bedolaga_api_url="https://bedolaga.local",
+            bedolaga_api_token="bad-token",
+        ),
+    ), patch("web.backend.api.v2.violations.httpx.AsyncClient", _ClientAuthFailed):
+        resp = await client.get("/api/v2/violations/banhammer/bedolaga-status")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["configured"] is True
+    assert data["reachable"] is True
+    assert data["health_ok"] is True
+    assert data["auth_ok"] is False
+    assert data["ban_notifications_endpoint_ok"] is False
+    assert data["probe_status_code"] == 401
+
+
+@pytest.mark.asyncio
+async def test_get_banhammer_bedolaga_status_missing_notification_endpoint(app, client):
+    class _ClientNoEndpoint:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, path, headers=None):
+            request = httpx.Request("GET", "https://bedolaga.local/health")
+            return httpx.Response(200, request=request, json={"status": "ok"})
+
+        async def post(self, path, headers=None, json=None):
+            request = httpx.Request("POST", "https://bedolaga.local/ban-notifications/send")
+            return httpx.Response(404, request=request, json={"detail": "not found"})
+
+    with patch(
+        "web.backend.api.v2.violations.get_web_settings",
+        return_value=SimpleNamespace(
+            bedolaga_api_url="https://bedolaga.local",
+            bedolaga_api_token="token",
+        ),
+    ), patch("web.backend.api.v2.violations.httpx.AsyncClient", _ClientNoEndpoint):
+        resp = await client.get("/api/v2/violations/banhammer/bedolaga-status")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["configured"] is True
+    assert data["reachable"] is True
+    assert data["health_ok"] is True
+    assert data["auth_ok"] is True
+    assert data["ban_notifications_endpoint_ok"] is False
+    assert data["probe_status_code"] == 404

@@ -1429,6 +1429,31 @@
     },
     "banhammer": {
       "refresh": "Refresh",
+      "summary": {
+        "enabled": "Protection",
+        "nodesWithPolicy": "Policies enabled",
+        "activeBlocks": "Active blocks",
+        "recentEvents": "Recent events"
+      },
+      "bedolaga": {
+        "title": "Bedolaga API Health",
+        "description": "Checks integration readiness for Banhammer notifications endpoint.",
+        "checkNow": "Check now",
+        "configured": "Configured",
+        "reachable": "Reachable",
+        "auth": "Auth valid",
+        "endpoint": "Notifications endpoint",
+        "endpointOk": "OK",
+        "endpointBroken": "Broken",
+        "healthCode": "Health HTTP",
+        "probeCode": "Probe HTTP",
+        "checkedAt": "Checked at",
+        "overall": {
+          "ok": "Ready",
+          "degraded": "Issues detected",
+          "notConfigured": "Not configured"
+        }
+      },
       "settings": {
         "title": "Banhammer Settings",
         "description": "Configure warning limits, cooldown, block stages and warning text template.",
@@ -1468,6 +1493,7 @@
         "title": "Banhammer Events",
         "description": "Recent warning and block actions.",
         "empty": "No events yet",
+        "nodePolicyMismatch": "Node policy mismatch",
         "columns": {
           "time": "Time",
           "action": "Action",

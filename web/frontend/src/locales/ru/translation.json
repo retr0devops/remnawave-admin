@@ -1429,6 +1429,31 @@
     },
     "banhammer": {
       "refresh": "Обновить",
+      "summary": {
+        "enabled": "Защита",
+        "nodesWithPolicy": "Включённых политик",
+        "activeBlocks": "Активные блокировки",
+        "recentEvents": "Последние события"
+      },
+      "bedolaga": {
+        "title": "Состояние Bedolaga API",
+        "description": "Проверка готовности интеграции с endpoint уведомлений Banhammer.",
+        "checkNow": "Проверить",
+        "configured": "Настроен",
+        "reachable": "Доступен",
+        "auth": "Авторизация",
+        "endpoint": "Endpoint уведомлений",
+        "endpointOk": "ОК",
+        "endpointBroken": "Проблема",
+        "healthCode": "HTTP health",
+        "probeCode": "HTTP probe",
+        "checkedAt": "Проверено",
+        "overall": {
+          "ok": "Готово",
+          "degraded": "Есть проблемы",
+          "notConfigured": "Не настроено"
+        }
+      },
       "settings": {
         "title": "Настройки Banhammer",
         "description": "Лимиты предупреждений, cooldown, стадии блокировок и шаблон предупреждения.",
@@ -1468,6 +1493,7 @@
         "title": "События Banhammer",
         "description": "Последние предупреждения и блокировки.",
         "empty": "Событий пока нет",
+        "nodePolicyMismatch": "Несовпадение node policy",
         "columns": {
           "time": "Время",
           "action": "Действие",

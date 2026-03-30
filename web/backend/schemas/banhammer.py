@@ -116,3 +116,15 @@ class BanhammerStatesResponse(BaseModel):
     page: int
     per_page: int
     pages: int
+
+
+class BanhammerBedolagaStatusResponse(BaseModel):
+    configured: bool
+    reachable: bool
+    health_ok: bool
+    auth_ok: bool
+    ban_notifications_endpoint_ok: bool
+    health_status_code: Optional[int] = None
+    probe_status_code: Optional[int] = None
+    detail: Optional[str] = None
+    checked_at: datetime
