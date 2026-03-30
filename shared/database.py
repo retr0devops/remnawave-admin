@@ -5761,6 +5761,34 @@ class DatabaseService:
             logger.error("Error counting Banhammer states: %s", e, exc_info=True)
             return 0
 
+    async def get_banhammer_expired_blocked_users(self, limit: int = 200) -> List[str]:
+        """Return user UUIDs with expired Banhammer blocks (blocked_until <= NOW)."""
+        if not self.is_connected:
+            return []
+
+        try:
+            safe_limit = max(1, min(int(limit), 5000))
+            async with self.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT user_uuid::text AS user_uuid
+                    FROM banhammer_user_states
+                    WHERE blocked_until IS NOT NULL
+                      AND blocked_until <= NOW()
+                    ORDER BY blocked_until ASC
+                    LIMIT $1
+                    """,
+                    safe_limit,
+                )
+                return [str(row["user_uuid"]) for row in rows if row.get("user_uuid")]
+        except Exception as e:
+            msg = str(e)
+            if "banhammer_user_states" in msg and "does not exist" in msg:
+                logger.debug("banhammer_user_states table does not exist yet")
+                return []
+            logger.error("Error listing expired Banhammer blocks: %s", e, exc_info=True)
+            return []
+
     async def add_banhammer_event(
         self,
         user_uuid: str,

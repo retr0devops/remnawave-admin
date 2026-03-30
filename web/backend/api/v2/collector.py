@@ -19,11 +19,14 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from shared.banhammer import BanhammerService
+from shared.bedolaga_client import bedolaga_client
+from shared.connection_types import normalize_connection_type
 from shared.database import db_service
 from shared.connection_monitor import ConnectionMonitor
 from shared.violation_detector import IntelligentViolationDetector, ViolationAction
 from shared.agent_tokens import get_node_by_token
 from shared.config_service import config_service
+from web.backend.core.config import get_web_settings
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +148,7 @@ def _schedule_background_task(coro):
 # Кэш имён нод: {node_uuid: (node_name, cached_at)}
 _node_name_cache: dict[str, tuple[str, datetime]] = {}
 _NODE_NAME_TTL_MINUTES = 30
+_MOBILE_CONNECTION_TYPES = {"mobile", "mobile_isp"}
 
 # Rate limiter для /batch: не более одного запроса в секунду с одной ноды
 _node_last_batch: dict[str, float] = {}
@@ -164,6 +168,150 @@ async def _get_node_name(node_uuid: str) -> str:
         return name
     except Exception:
         return cached[0] if cached else node_uuid[:8]
+
+
+def _normalize_banhammer_types(raw_values) -> set[str]:
+    """Normalize connection_type values from Banhammer mismatch payload."""
+    normalized: set[str] = set()
+    if not isinstance(raw_values, list):
+        return normalized
+    for raw_value in raw_values:
+        value = normalize_connection_type(raw_value)
+        if value:
+            normalized.add(value)
+    return normalized
+
+
+def _resolve_network_notification_type(mismatches: list[dict]) -> tuple[str, Optional[str]]:
+    """
+    Map Banhammer mismatch details to Bedolaga notification type.
+
+    Returns:
+        (notification_type, network_type_hint)
+    """
+    actual_types: set[str] = set()
+    expected_types: set[str] = set()
+
+    for mismatch in mismatches or []:
+        if not isinstance(mismatch, dict):
+            continue
+        actual_types.update(_normalize_banhammer_types(mismatch.get("actual_connection_types")))
+        expected_types.update(_normalize_banhammer_types(mismatch.get("expected_connection_types")))
+
+    if actual_types.intersection(_MOBILE_CONNECTION_TYPES):
+        notification_type = "network_mobile"
+    elif expected_types and expected_types.issubset(_MOBILE_CONNECTION_TYPES):
+        notification_type = "network_wifi"
+    elif expected_types and expected_types.isdisjoint(_MOBILE_CONNECTION_TYPES):
+        notification_type = "network_mobile"
+    else:
+        notification_type = "network_wifi"
+
+    network_type_hint = ", ".join(sorted(actual_types)) if actual_types else None
+    return notification_type, network_type_hint
+
+
+def _build_warning_message(result) -> str:
+    """Build warning message text for Bedolaga notification endpoint."""
+    base_message = str(getattr(result, "message", "") or "").strip()
+    if not base_message:
+        base_message = "Node policy mismatch detected. Reconnect using an allowed network type."
+
+    details: list[str] = []
+    for mismatch in (getattr(result, "mismatches", None) or [])[:2]:
+        if not isinstance(mismatch, dict):
+            continue
+        node_uuid = str(mismatch.get("node_uuid") or "").strip()
+        actual = _normalize_banhammer_types(mismatch.get("actual_connection_types"))
+        expected = _normalize_banhammer_types(mismatch.get("expected_connection_types"))
+        if not node_uuid and not actual and not expected:
+            continue
+        details.append(
+            f"node={node_uuid[:8] or 'n/a'} expected={','.join(sorted(expected)) or '-'} "
+            f"actual={','.join(sorted(actual)) or '-'}"
+        )
+
+    if details:
+        return f"{base_message} ({'; '.join(details)})"
+    return base_message
+
+
+async def _send_banhammer_user_notification(user_uuid: str, result) -> None:
+    """Send user-facing Banhammer warning/block notification via Bedolaga API."""
+    if getattr(result, "action", "") not in {"warn", "block"}:
+        return
+
+    settings = get_web_settings()
+    if not settings.bedolaga_api_url or not settings.bedolaga_api_token:
+        return
+
+    user_info = await db_service.get_user_by_uuid(user_uuid) or {}
+    username_raw = str(user_info.get("username") or "").strip()
+    email_raw = str(user_info.get("email") or "").strip()
+
+    # Bedolaga resolves user by identifier through Remnawave:
+    # it first tries username lookup, then falls back to email.
+    user_identifier = username_raw or email_raw
+    username = username_raw or user_uuid[:8]
+    if not user_identifier:
+        logger.debug(
+            "Skipping Bedolaga Banhammer notification for %s: username/email are missing",
+            user_uuid,
+        )
+        return
+
+    if not bedolaga_client.is_configured:
+        bedolaga_client.configure(settings.bedolaga_api_url, settings.bedolaga_api_token)
+
+    mismatches = list(getattr(result, "mismatches", None) or [])
+    node_name = None
+    if mismatches:
+        first_match = mismatches[0] if isinstance(mismatches[0], dict) else {}
+        node_uuid = str(first_match.get("node_uuid") or "").strip()
+        if node_uuid:
+            node_name = await _get_node_name(node_uuid)
+
+    if getattr(result, "action", "") == "warn":
+        payload = {
+            "notification_type": "warning",
+            "user_identifier": user_identifier,
+            "username": username,
+            "warning_message": _build_warning_message(result),
+        }
+        if node_name:
+            payload["node_name"] = node_name
+    else:
+        notification_type, network_type_hint = _resolve_network_notification_type(mismatches)
+        block_minutes = int(getattr(result, "block_minutes", 0) or 0)
+        if block_minutes <= 0:
+            block_minutes = 15
+
+        payload = {
+            "notification_type": notification_type,
+            "user_identifier": user_identifier,
+            "username": username,
+            "ban_minutes": block_minutes,
+        }
+        if network_type_hint:
+            payload["network_type"] = network_type_hint
+        if node_name:
+            payload["node_name"] = node_name
+
+    try:
+        await bedolaga_client.send_ban_notification(payload)
+        logger.info(
+            "Banhammer user notification sent via Bedolaga: user=%s action=%s type=%s",
+            user_uuid,
+            getattr(result, "action", ""),
+            payload.get("notification_type"),
+        )
+    except Exception as e:
+        logger.warning(
+            "Bedolaga Banhammer notification failed: user=%s action=%s error=%s",
+            user_uuid,
+            getattr(result, "action", ""),
+            e,
+        )
 
 router = APIRouter()
 
@@ -678,6 +826,9 @@ async def _run_banhammer_for_user(user_uuid: str):
             active_connections=active_conns,
             ip_metadata_cache=ip_metadata,
         )
+
+        if result.action in {"warn", "block"}:
+            await _send_banhammer_user_notification(user_uuid, result)
 
         if result.action in {"warn", "block", "blocked", "block_failed", "unblock_failed"}:
             logger.info(

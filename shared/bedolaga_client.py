@@ -213,5 +213,11 @@ class BedolagaClient:
     async def stop_broadcast(self, broadcast_id: int) -> dict:
         return await self._post(f"/broadcasts/{broadcast_id}/stop")
 
+    # ── Ban notifications ──
+
+    async def send_ban_notification(self, data: dict) -> dict:
+        """Send user-facing ban/warning notification to Bedolaga API."""
+        return await self._post("/ban-notifications/send", json=data)
+
 
 bedolaga_client = BedolagaClient()

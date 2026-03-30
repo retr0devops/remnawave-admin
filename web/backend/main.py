@@ -458,8 +458,58 @@ async def lifespan(app: FastAPI):
                             logger.warning("Baseline refresh failed: %s", exc)
                         await asyncio.sleep(1800)  # every 30 min
 
+                # Start Banhammer unblock sweep (decoupled from collector traffic).
+                async def _banhammer_unblock_loop():
+                    from shared.banhammer import BanhammerService
+
+                    service = BanhammerService(db_service)
+                    await asyncio.sleep(30)  # initial delay
+                    while True:
+                        try:
+                            raw_interval = config_service.get("banhammer_unblock_scan_interval_seconds", 60)
+                            raw_limit = config_service.get("banhammer_unblock_scan_batch_size", 200)
+                            try:
+                                scan_interval = max(10, int(raw_interval))
+                            except (TypeError, ValueError):
+                                scan_interval = 60
+                            try:
+                                batch_limit = max(1, min(int(raw_limit), 5000))
+                            except (TypeError, ValueError):
+                                batch_limit = 200
+
+                            expired_users = await db_service.get_banhammer_expired_blocked_users(limit=batch_limit)
+                            if expired_users:
+                                logger.info(
+                                    "Banhammer unblock sweep: processing %d expired user(s)",
+                                    len(expired_users),
+                                )
+                            for user_uuid in expired_users:
+                                try:
+                                    result = await service.process_user(
+                                        user_uuid=user_uuid,
+                                        active_connections=[],
+                                        ip_metadata_cache={},
+                                    )
+                                    if result.action == "unblock_failed":
+                                        logger.warning(
+                                            "Banhammer unblock sweep failed for user %s",
+                                            user_uuid,
+                                        )
+                                except Exception as user_exc:
+                                    logger.warning(
+                                        "Banhammer unblock sweep user processing error for %s: %s",
+                                        user_uuid,
+                                        user_exc,
+                                    )
+                        except Exception as exc:
+                            logger.warning("Banhammer unblock sweep failed: %s", exc)
+                            scan_interval = 60
+
+                        await asyncio.sleep(scan_interval)
+
                 _bg_tasks.append(asyncio.create_task(_maintenance_loop()))
                 _bg_tasks.append(asyncio.create_task(_baseline_refresh_loop()))
+                _bg_tasks.append(asyncio.create_task(_banhammer_unblock_loop()))
 
                 # Dashboard WS publisher — pushes stats to subscribed clients
                 from web.backend.api.v2.websocket import dashboard_publisher_loop
